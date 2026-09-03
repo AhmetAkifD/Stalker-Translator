@@ -12,13 +12,13 @@ export async function readXmlFile(fileHandle) {
   }
 }
 
-export async function saveTranslatedFile(directoryHandle, originalFileHandle, newXmlContent) {
+export async function saveFileToFolder(directoryHandle, originalFileHandle, folderName, newXmlContent) {
   try {
-    // Get or create the "translated_files" directory
-    const translatedDirHandle = await directoryHandle.getDirectoryHandle('translated_files', { create: true });
+    // Get or create the directory
+    const dirHandle = await directoryHandle.getDirectoryHandle(folderName, { create: true });
     
     // Get or create the file in that directory
-    const newFileHandle = await translatedDirHandle.getFileHandle(originalFileHandle.name, { create: true });
+    const newFileHandle = await dirHandle.getFileHandle(originalFileHandle.name, { create: true });
     
     // Create a writable stream to the file
     const writable = await newFileHandle.createWritable();
@@ -29,7 +29,7 @@ export async function saveTranslatedFile(directoryHandle, originalFileHandle, ne
     
     return true;
   } catch (error) {
-    console.error("Error saving file:", error);
+    console.error(`Error saving file to ${folderName}:`, error);
     throw error;
   }
 }

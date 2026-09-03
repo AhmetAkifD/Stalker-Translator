@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { translateText, translateBulk, checkTokenLimit } from '../utils/geminiApi';
 import { replaceTurkishCharacters } from '../utils/turkishReplacer';
 import { extractTranslations, applyTranslations } from '../utils/xmlUtils';
-import { readXmlFile, saveTranslatedFile } from '../utils/fileSystem';
+import { readXmlFile, saveFileToFolder } from '../utils/fileSystem';
 import { Save, Loader2, ArrowRight, Zap, Calculator, Copy, Check } from 'lucide-react';
 
 export default function Editor({ fileHandle, directoryHandle, apiKey, prompt, selectedModel, targetItemId, onClearTargetItem }) {
@@ -130,7 +130,7 @@ export default function Editor({ fileHandle, directoryHandle, apiKey, prompt, se
       const minLength = Math.min(items.length, translationsArray.length);
       
       for (let i = 0; i < minLength; i++) {
-        newItems[i].translatedText = replaceTurkishCharacters(translationsArray[i] || "");
+        newItems[i].translatedText = translationsArray[i] || "";
       }
       setItems(newItems);
 
@@ -153,10 +153,9 @@ export default function Editor({ fileHandle, directoryHandle, apiKey, prompt, se
     setTranslatingId(item.id);
     try {
       const rawTranslation = await translateText(item.originalText, apiKey, prompt, selectedModel);
-      const cleanTranslation = replaceTurkishCharacters(rawTranslation);
       
       const newItems = [...items];
-      newItems[index].translatedText = cleanTranslation;
+      newItems[index].translatedText = rawTranslation;
       setItems(newItems);
     } catch (error) {
       alert("Translation failed: " + error.message);
@@ -175,15 +174,21 @@ export default function Editor({ fileHandle, directoryHandle, apiKey, prompt, se
     try {
       setSaveStatus("Saving...");
       
-      // Automatically apply Turkish character replacement to all fields before saving
-      const cleanedItems = items.map(item => ({
+      // 1. Generate the Turkish XML (combines originalXml with user's current edits in `items`)
+      // Notice we no longer clean `items` here, so we save EXACTLY what they wrote/translated with Turkish chars.
+      const xml_TR = applyTranslations(originalXml, items);
+      
+      // 2. Generate the English XML by extracting all texts from xml_TR, cleaning them, and applying them back.
+      const currentTexts = extractTranslations(xml_TR);
+      const cleanedCurrentItems = currentTexts.map(item => ({
         ...item,
-        translatedText: item.translatedText ? replaceTurkishCharacters(item.translatedText) : ""
+        translatedText: replaceTurkishCharacters(item.originalText)
       }));
-      setItems(cleanedItems);
+      const xml_EN = applyTranslations(xml_TR, cleanedCurrentItems);
 
-      const updatedXml = applyTranslations(originalXml, cleanedItems);
-      await saveTranslatedFile(directoryHandle, fileHandle, updatedXml);
+      // 3. Save both
+      await saveFileToFolder(directoryHandle, fileHandle, "backups", xml_TR);
+      await saveFileToFolder(directoryHandle, fileHandle, "translated_files", xml_EN);
       
       setSaveStatus("Saved successfully!");
       setTimeout(() => setSaveStatus(""), 3000);

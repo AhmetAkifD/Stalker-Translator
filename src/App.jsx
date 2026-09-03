@@ -9,6 +9,7 @@ function App() {
   const [directoryHandle, setDirectoryHandle] = useState(null)
   const [originalFiles, setOriginalFiles] = useState([])
   const [translatedFiles, setTranslatedFiles] = useState([])
+  const [backupFiles, setBackupFiles] = useState([])
   const [selectedFile, setSelectedFile] = useState(null)
   const [targetItemId, setTargetItemId] = useState(null)
   const [apiKey, setApiKey] = useState(localStorage.getItem('geminiApiKey') || '')
@@ -25,15 +26,21 @@ function App() {
       
       const origFiles = []
       const transFiles = []
+      const bckFiles = []
       
       for await (const entry of dirHandle.values()) {
         if (entry.kind === 'file' && entry.name.endsWith('.xml')) {
           origFiles.push(entry)
         } else if (entry.kind === 'directory' && entry.name === 'translated_files') {
-          const transDirHandle = entry
-          for await (const subEntry of transDirHandle.values()) {
+          for await (const subEntry of entry.values()) {
             if (subEntry.kind === 'file' && subEntry.name.endsWith('.xml')) {
               transFiles.push(subEntry)
+            }
+          }
+        } else if (entry.kind === 'directory' && entry.name === 'backups') {
+          for await (const subEntry of entry.values()) {
+            if (subEntry.kind === 'file' && subEntry.name.endsWith('.xml')) {
+              bckFiles.push(subEntry)
             }
           }
         }
@@ -41,6 +48,7 @@ function App() {
       
       setOriginalFiles(origFiles.sort((a, b) => a.name.localeCompare(b.name)))
       setTranslatedFiles(transFiles.sort((a, b) => a.name.localeCompare(b.name)))
+      setBackupFiles(bckFiles.sort((a, b) => a.name.localeCompare(b.name)))
       setSelectedFile(null)
     } catch (error) {
       console.error(error)
@@ -139,6 +147,7 @@ function App() {
         <FileBrowser 
           originalFiles={originalFiles} 
           translatedFiles={translatedFiles}
+          backupFiles={backupFiles}
           sidebarWidth={sidebarWidth}
           onSelectFile={(f) => {
             setSelectedFile(f);

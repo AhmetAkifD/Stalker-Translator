@@ -13,8 +13,17 @@ export function replaceTurkishCharacters(text) {
     'ş': 's',
     'Ş': 'S',
     'ü': 'u',
-    'Ü': 'U'
+    'Ü': 'U',
+    // Şapkalı Harfler (Circumflex vowels)
+    'â': 'a',
+    'Â': 'A',
+    'î': 'i',
+    'Î': 'I',
+    'û': 'u',
+    'Û': 'U',
+    'ê': 'e',
+    'Ê': 'E'
   };
 
-  return text.replace(/[çÇğĞıİöÖşŞüÜ]/g, match => charMap[match]);
+  return text.replace(/[çÇğĞıİöÖşŞüÜâÂîÎûÛêÊ]/g, match => charMap[match]);
 }
