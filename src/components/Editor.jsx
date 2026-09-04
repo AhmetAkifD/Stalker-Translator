@@ -1,11 +1,24 @@
 import { useState, useEffect } from 'react';
 import { translateText, translateBulk, checkTokenLimit } from '../utils/geminiApi';
 import { replaceTurkishCharacters } from '../utils/turkishReplacer';
-import { extractTranslations, applyTranslations } from '../utils/xmlUtils';
+import { extractTranslations, applyTranslations, hasStringTable } from '../utils/xmlUtils';
 import { readXmlFile, saveFileToFolder } from '../utils/fileSystem';
-import { Save, Loader2, ArrowRight, Zap, Calculator, Copy, Check } from 'lucide-react';
+import { Save, Loader2, ArrowRight, Zap, Calculator, Copy, Check, AlertTriangle, Eye, Wrench, BookOpen } from 'lucide-react';
 
-export default function Editor({ fileHandle, directoryHandle, apiKey, prompt, selectedModel, targetItemId, onClearTargetItem }) {
+export default function Editor({ 
+  fileHandle, 
+  directoryHandle, 
+  apiKey, 
+  prompt, 
+  selectedModel, 
+  targetItemId, 
+  onClearTargetItem, 
+  onSwitchToViewer, 
+  onFixCurrentFile, 
+  isFixing = false,
+  glossary = [],
+  onOpenGlossary = () => {}
+}) {
   const [items, setItems] = useState([]);
   const [originalXml, setOriginalXml] = useState("");
   const [loading, setLoading] = useState(false);
@@ -85,7 +98,7 @@ export default function Editor({ fileHandle, directoryHandle, apiKey, prompt, se
     setTokenInfo({ ...tokenInfo, loading: true });
     try {
       const originalTexts = items.map(i => i.originalText);
-      const tokens = await checkTokenLimit(originalTexts, apiKey, prompt, selectedModel);
+      const tokens = await checkTokenLimit(originalTexts, apiKey, prompt, selectedModel, glossary);
       setTokenInfo({ checked: true, tokens, loading: false });
       return tokens;
     } catch (error) {
@@ -115,7 +128,7 @@ export default function Editor({ fileHandle, directoryHandle, apiKey, prompt, se
     setBulkTranslating(true);
     try {
       const originalTexts = items.map(i => i.originalText);
-      const translationsArray = await translateBulk(originalTexts, apiKey, prompt, selectedModel);
+      const translationsArray = await translateBulk(originalTexts, apiKey, prompt, selectedModel, glossary);
       
       if (!Array.isArray(translationsArray)) {
         throw new Error("API did not return a valid JSON array.");
@@ -152,7 +165,7 @@ export default function Editor({ fileHandle, directoryHandle, apiKey, prompt, se
     
     setTranslatingId(item.id);
     try {
-      const rawTranslation = await translateText(item.originalText, apiKey, prompt, selectedModel);
+      const rawTranslation = await translateText(item.originalText, apiKey, prompt, selectedModel, glossary);
       
       const newItems = [...items];
       newItems[index].translatedText = rawTranslation;
@@ -212,8 +225,29 @@ export default function Editor({ fileHandle, directoryHandle, apiKey, prompt, se
           <h2 className="text-lg font-semibold text-gray-800">{fileHandle.name}</h2>
           <p className="text-sm text-gray-500">{items.length} text entries found</p>
         </div>
-        
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {glossary.length > 0 ? (
+            <button 
+              type="button"
+              onClick={onOpenGlossary}
+              className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded text-sm font-medium transition-colors"
+              title="Aktif özel sözlük kurallarını görüntüleyin veya düzenleyin"
+            >
+              <BookOpen size={16} />
+              <span>{glossary.length} Terim Aktif</span>
+            </button>
+          ) : (
+            <button 
+              type="button"
+              onClick={onOpenGlossary}
+              className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 text-gray-600 px-3 py-1.5 rounded text-sm font-medium transition-colors"
+              title="Özel kelime ve terim kuralları tanımlayın"
+            >
+              <BookOpen size={16} />
+              <span>Sözlük Ekle</span>
+            </button>
+          )}
+
           <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-200 px-3 py-1.5 rounded text-sm text-yellow-800">
             {tokenInfo.loading ? (
                <Loader2 size={16} className="animate-spin" />
@@ -253,6 +287,53 @@ export default function Editor({ fileHandle, directoryHandle, apiKey, prompt, se
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {originalXml && !hasStringTable(originalXml) && (
+          <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="text-amber-600 shrink-0" size={22} />
+              <div>
+                <h4 className="text-sm font-bold text-amber-900">
+                  Dikkat: &lt;string_table&gt; Etiketi Bulunamadı!
+                </h4>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  Bu dosya oyunun çeviri tablosu formatında olmayabilir (arayüz veya konfigürasyon dosyası olabilir). Ham XML içeriğini incelemek için Görüntüleyici modunu kullanabilirsiniz.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-4">
+              {onFixCurrentFile && (
+                <button
+                  type="button"
+                  onClick={onFixCurrentFile}
+                  disabled={isFixing}
+                  className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:opacity-50 text-white px-3 py-1.5 rounded-md text-xs font-semibold shrink-0 transition-colors shadow-xs"
+                  title="Orijinal ve çeviri dosyalarını 'broken_files' içine yedekleyip <string_table> ekleyerek onarır"
+                >
+                  {isFixing ? <Loader2 size={13} className="animate-spin" /> : <Wrench size={13} />}
+                  Dosyayı Onar (&lt;string_table&gt; Ekle)
+                </button>
+              )}
+              {onSwitchToViewer && (
+                <button
+                  type="button"
+                  onClick={onSwitchToViewer}
+                  className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-md text-xs font-semibold shrink-0 transition-colors shadow-sm"
+                >
+                  <Eye size={13} />
+                  Görüntüleyiciye Geç
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {items.length === 0 && (
+          <div className="text-center py-12 text-gray-500 bg-white rounded-lg border border-dashed border-gray-300">
+            <p className="font-semibold text-sm text-gray-700">Bu dosyada çevrilebilir &lt;string&gt; kaydı bulunamadı.</p>
+            <p className="text-xs text-gray-400 mt-1">Dosyanın ham içeriğini incelemek için Görüntüleyici modunu açabilirsiniz.</p>
+          </div>
+        )}
+
         {items.map((item, index) => (
           <div 
             key={item.id} 

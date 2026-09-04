@@ -1,3 +1,25 @@
+export function hasStringTable(xmlString) {
+  if (!xmlString || typeof xmlString !== 'string') return false;
+  return /<string_table[\s>]/i.test(xmlString);
+}
+
+export function fixXmlStringTable(content) {
+  if (!content || typeof content !== 'string') return '<string_table>\n</string_table>';
+  
+  // If it already has <string_table>, do not modify
+  if (hasStringTable(content)) return content;
+  
+  const trimmed = content.trim();
+  
+  // If there is an XML declaration (e.g. <?xml version="1.0" ... ?>), place <string_table> right after it
+  if (trimmed.startsWith('<?xml')) {
+    return content.replace(/(<\?xml[^?]*\?>\s*)/i, '$1<string_table>\n') + '\n</string_table>';
+  }
+  
+  // Otherwise place <string_table> as the first line and </string_table> as the last line
+  return '<string_table>\n' + content + '\n</string_table>';
+}
+
 export function extractTranslations(xmlString) {
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(xmlString, "text/xml");
