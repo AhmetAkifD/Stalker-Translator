@@ -1,18 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Trash2, Plus, Check } from 'lucide-react';
+import { ChevronDown, Trash2, Plus, Check, ArrowUp, ArrowDown } from 'lucide-react';
 
-export default function ModelSelector({ selectedModel, onSelectModel }) {
+export default function ModelSelector({ selectedModel, onSelectModel, models = [], setModels }) {
   const [isOpen, setIsOpen] = useState(false);
   const [newModelName, setNewModelName] = useState('');
-  const [models, setModels] = useState(() => {
-    const saved = localStorage.getItem('geminiCustomModels');
-    return saved ? JSON.parse(saved) : [
-      'gemini-3.7-flash',
-      'gemini-3.8-flash',
-      'gemini-3.6-flash',
-      'gemini-3.6-pro'
-    ];
-  });
 
   const dropdownRef = useRef(null);
 
@@ -27,11 +18,6 @@ export default function ModelSelector({ selectedModel, onSelectModel }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const saveModels = (newList) => {
-    setModels(newList);
-    localStorage.setItem('geminiCustomModels', JSON.stringify(newList));
-  };
-
   const handleAddModel = (e) => {
     e.preventDefault();
     const trimmed = newModelName.trim();
@@ -39,7 +25,7 @@ export default function ModelSelector({ selectedModel, onSelectModel }) {
 
     if (!models.includes(trimmed)) {
       const updated = [...models, trimmed];
-      saveModels(updated);
+      setModels(updated);
       onSelectModel(trimmed);
     } else {
       onSelectModel(trimmed);
@@ -50,12 +36,28 @@ export default function ModelSelector({ selectedModel, onSelectModel }) {
   const handleDeleteModel = (e, modelToDelete) => {
     e.stopPropagation();
     const updated = models.filter(m => m !== modelToDelete);
-    saveModels(updated);
+    setModels(updated);
     
     // If the currently selected model is deleted, select the first available
     if (selectedModel === modelToDelete && updated.length > 0) {
       onSelectModel(updated[0]);
     }
+  };
+
+  const handleMoveUp = (e, index) => {
+    e.stopPropagation();
+    if (index === 0) return;
+    const updated = [...models];
+    [updated[index - 1], updated[index]] = [updated[index], updated[index - 1]];
+    setModels(updated);
+  };
+
+  const handleMoveDown = (e, index) => {
+    e.stopPropagation();
+    if (index === models.length - 1) return;
+    const updated = [...models];
+    [updated[index + 1], updated[index]] = [updated[index], updated[index + 1]];
+    setModels(updated);
   };
 
   return (
@@ -77,7 +79,7 @@ export default function ModelSelector({ selectedModel, onSelectModel }) {
         <div className="absolute left-0 mt-1 w-72 bg-white border border-gray-200 rounded-md shadow-lg z-50 overflow-hidden">
           {/* Models List */}
           <div className="max-h-60 overflow-y-auto py-1 divide-y divide-gray-100">
-            {models.map((m) => (
+            {models.map((m, index) => (
               <div
                 key={m}
                 onClick={() => {
@@ -89,18 +91,40 @@ export default function ModelSelector({ selectedModel, onSelectModel }) {
                 }`}
               >
                 <div className="flex items-center gap-2 truncate font-mono text-xs">
-                  {selectedModel === m && <Check size={14} className="text-blue-600 shrink-0" />}
+                  {selectedModel === m ? <Check size={14} className="text-blue-600 shrink-0" /> : <div className="w-3.5 shrink-0" />}
                   <span className="truncate">{m}</span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={(e) => handleDeleteModel(e, m)}
-                  className="text-gray-400 hover:text-red-500 p-1 rounded transition-colors ml-2"
-                  title="Delete Model"
-                >
-                  <Trash2 size={13} />
-                </button>
+                <div className="flex items-center gap-1 shrink-0 ml-2 opacity-60 hover:opacity-100">
+                  <div className="flex flex-col">
+                    <button
+                      type="button"
+                      onClick={(e) => handleMoveUp(e, index)}
+                      disabled={index === 0}
+                      className="text-gray-400 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-gray-400 p-0.5"
+                      title="Move Up"
+                    >
+                      <ArrowUp size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => handleMoveDown(e, index)}
+                      disabled={index === models.length - 1}
+                      className="text-gray-400 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-gray-400 p-0.5"
+                      title="Move Down"
+                    >
+                      <ArrowDown size={12} />
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteModel(e, m)}
+                    className="text-gray-400 hover:text-red-500 p-1 ml-1 rounded transition-colors"
+                    title="Delete Model"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
             ))}
 

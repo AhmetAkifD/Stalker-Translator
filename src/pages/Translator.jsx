@@ -22,7 +22,12 @@ export default function Translator({ initialMode = 'editor' }) {
   const [viewMode, setViewMode] = useState(initialMode) // 'editor' | 'viewer' | 'glossary'
   const [apiKey, setApiKey] = useState(localStorage.getItem('geminiApiKey') || '')
   const [prompt, setPrompt] = useState(localStorage.getItem('geminiPrompt') || 'Translate this game dialogue to Turkish. Just return the translation without any markdown or quotes.')
-  const [model, setModel] = useState(localStorage.getItem('geminiModel') || 'gemini-3.7-flash')
+  
+  const defaultModels = ['gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.6-pro'];
+  const savedModels = localStorage.getItem('geminiCustomModels');
+  const [models, setModels] = useState(savedModels ? JSON.parse(savedModels) : defaultModels);
+  
+  const [model, setModel] = useState(localStorage.getItem('geminiModel') || models[0] || 'gemini-3.7-flash')
   
   useEffect(() => {
     if (initialMode) {
@@ -157,8 +162,22 @@ export default function Translator({ initialMode = 'editor' }) {
     }));
   };
 
-  // Flatten all glossaries for the API
-  const flatGlossary = Object.values(glossariesMap).flat();
+  // Flatten and deduplicate all glossaries for the API
+  const flatGlossary = [];
+  const seenOriginals = new Set();
+  const seenIds = new Set();
+  
+  for (const term of Object.values(glossariesMap).flat()) {
+    if (!term) continue;
+    const lowerOriginal = (term.original || "").trim().toLowerCase();
+    
+    // Deduplicate by original text or exact ID
+    if (lowerOriginal && !seenOriginals.has(lowerOriginal) && !seenIds.has(term.id)) {
+      seenOriginals.add(lowerOriginal);
+      seenIds.add(term.id);
+      flatGlossary.push(term);
+    }
+  }
 
   const revalidateFiles = async (orig = originalFiles, trans = translatedFiles, bck = backupFiles) => {
     const allFilesToCheck = [...orig, ...trans, ...bck];
@@ -286,7 +305,12 @@ export default function Translator({ initialMode = 'editor' }) {
             onSelectModel={(newModel) => {
               setModel(newModel)
               localStorage.setItem('geminiModel', newModel)
-            }} 
+            }}
+            models={models}
+            setModels={(newModels) => {
+              setModels(newModels)
+              localStorage.setItem('geminiCustomModels', JSON.stringify(newModels))
+            }}
           />
 
           <div className="flex-1">
@@ -299,7 +323,6 @@ export default function Translator({ initialMode = 'editor' }) {
               placeholder="E.g. Translate to Turkish..."
             />
           </div>
-
           <div className="w-56">
             <label className="block text-xs font-semibold text-gray-500 mb-1 flex items-center gap-1">
               <Key size={12}/> Gemini API Key
@@ -312,7 +335,6 @@ export default function Translator({ initialMode = 'editor' }) {
               placeholder="AIzaSy..."
             />
           </div>
-
           <div className="flex flex-col justify-end">
             <label className="block text-xs font-semibold text-gray-500 mb-1">Search in XMLs</label>
             <SearchBar 
@@ -367,6 +389,7 @@ export default function Translator({ initialMode = 'editor' }) {
             onSwitchToViewer={() => setViewMode('viewer')}
             onFixCurrentFile={() => handleFixBrokenFiles(selectedFile?.name)}
             isFixing={isFixing}
+            fallbackModels={models}
             glossary={flatGlossary}
             onOpenGlossary={() => setViewMode('glossary')}
           />

@@ -1,11 +1,21 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-export function buildGlossaryPrompt(glossary = []) {
+export function buildGlossaryPrompt(glossary = [], targetTexts = null) {
   if (!Array.isArray(glossary) || glossary.length === 0) return "";
-  const validTerms = glossary.filter(
+  let validTerms = glossary.filter(
     item => item && typeof item.original === 'string' && typeof item.translation === 'string' &&
             item.original.trim() !== '' && item.translation.trim() !== ''
   );
+
+  // DYNAMIC FILTERING: Only include terms that actually appear in the target text
+  if (targetTexts && validTerms.length > 0) {
+    const combinedText = (Array.isArray(targetTexts) ? targetTexts.join("\n") : targetTexts).toLowerCase();
+    validTerms = validTerms.filter(item => {
+      const originalLower = item.original.trim().toLowerCase();
+      return combinedText.includes(originalLower);
+    });
+  }
+
   if (validTerms.length === 0) return "";
 
   let promptAddition = "\n\nCRITICAL GLOSSARY & TURKISH SUFFIX / PRONUNCIATION RULES:\n";
@@ -33,7 +43,7 @@ export async function checkTokenLimit(textsArray, apiKey, prompt, modelName = "g
   const model = genAI.getGenerativeModel({ model: modelName });
   
   const payload = JSON.stringify(textsArray);
-  const glossaryPrompt = buildGlossaryPrompt(glossary);
+  const glossaryPrompt = buildGlossaryPrompt(glossary, textsArray);
   const fullPrompt = prompt + glossaryPrompt + "\n\nTranslate the following JSON array of strings, returning only a JSON array of translated strings in the same order:\n" + payload;
 
   try {
@@ -57,7 +67,7 @@ export async function translateBulk(textsArray, apiKey, prompt, modelName = "gem
   });
 
   const payload = JSON.stringify(textsArray);
-  const glossaryPrompt = buildGlossaryPrompt(glossary);
+  const glossaryPrompt = buildGlossaryPrompt(glossary, textsArray);
   const fullPrompt = prompt + glossaryPrompt + "\n\nYou must return a valid JSON array of strings containing the translations, preserving the exact same order. Do NOT wrap in markdown blocks, just return raw JSON.\n\nArray to translate:\n" + payload;
 
   try {
@@ -82,7 +92,7 @@ export async function translateText(text, apiKey, prompt, modelName = "gemini-3.
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: modelName });
-  const glossaryPrompt = buildGlossaryPrompt(glossary);
+  const glossaryPrompt = buildGlossaryPrompt(glossary, text);
   const fullPrompt = prompt + glossaryPrompt + "\n\nText to translate:\n" + text;
 
   try {

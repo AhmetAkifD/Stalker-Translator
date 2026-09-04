@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { translateText, translateBulk, checkTokenLimit } from '../utils/geminiApi';
 import { replaceTurkishCharacters } from '../utils/turkishReplacer';
 import { extractTranslations, applyTranslations, hasStringTable } from '../utils/xmlUtils';
 import { readXmlFile, saveFileToFolder } from '../utils/fileSystem';
-import { Save, Loader2, ArrowRight, Zap, Calculator, Copy, Check, AlertTriangle, Eye, Wrench, BookOpen } from 'lucide-react';
+import { Save, Loader2, ArrowRight, Zap, Calculator, Copy, Check, AlertTriangle, Eye, Wrench, BookOpen, XCircle } from 'lucide-react';
 
 export default function Editor({ 
   fileHandle, 
@@ -11,6 +11,7 @@ export default function Editor({
   apiKey, 
   prompt, 
   selectedModel, 
+  fallbackModels = [],
   targetItemId, 
   onClearTargetItem, 
   onSwitchToViewer, 
@@ -22,6 +23,7 @@ export default function Editor({
   const [items, setItems] = useState([]);
   const [originalXml, setOriginalXml] = useState("");
   const [loading, setLoading] = useState(false);
+  const abortRef = useRef(false);
   const [translatingId, setTranslatingId] = useState(null);
   const [saveStatus, setSaveStatus] = useState("");
   const [bulkTranslating, setBulkTranslating] = useState(false);
@@ -108,13 +110,16 @@ export default function Editor({
     }
   };
 
+  const handleStopBulkTranslate = () => {
+    abortRef.current = true;
+  };
+
   const handleBulkTranslate = async () => {
     if (!apiKey) {
       alert("Please enter your Gemini API Key first.");
       return;
     }
 
-    // Check tokens first
     const tokens = await checkTokens();
     if (tokens > 230000) {
       alert("Warning: Token count (" + tokens + ") is very close to the 250,000 limit. Please translate manually or split the file.");
@@ -126,34 +131,72 @@ export default function Editor({
     }
 
     setBulkTranslating(true);
-    try {
-      const originalTexts = items.map(i => i.originalText);
-      const translationsArray = await translateBulk(originalTexts, apiKey, prompt, selectedModel, glossary);
-      
-      if (!Array.isArray(translationsArray)) {
-        throw new Error("API did not return a valid JSON array.");
-      }
-      
-      if (translationsArray.length === 0) {
-        throw new Error("API returned an empty array.");
-      }
+    abortRef.current = false;
+    
+    const originalTexts = items.map(i => i.originalText);
+    
+    // Start fallback from the selected model and move down the priority list
+    const startIndex = fallbackModels ? fallbackModels.indexOf(selectedModel) : -1;
+    const modelsToTry = fallbackModels && fallbackModels.length > 0
+      ? fallbackModels.slice(startIndex >= 0 ? startIndex : 0)
+      : [selectedModel];
+    
+    let success = false;
 
-      const newItems = [...items];
-      // Match up to the minimum of both arrays so we don't crash
-      const minLength = Math.min(items.length, translationsArray.length);
+    for (const modelToTry of modelsToTry) {
+      if (abortRef.current) {
+        console.log("Translation stopped by user.");
+        break;
+      }
       
-      for (let i = 0; i < minLength; i++) {
-        newItems[i].translatedText = translationsArray[i] || "";
-      }
-      setItems(newItems);
+      // Try each model up to 2 times
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        if (abortRef.current) break;
+        
+        console.log(`Trying model: ${modelToTry}, Attempt: ${attempt}`);
+        
+        try {
+          const translationsArray = await translateBulk(originalTexts, apiKey, prompt, modelToTry, glossary);
+          
+          if (!Array.isArray(translationsArray)) {
+            throw new Error("API did not return a valid JSON array.");
+          }
+          
+          if (translationsArray.length === 0) {
+            throw new Error("API returned an empty array.");
+          }
 
-      if (translationsArray.length !== items.length) {
-        alert(`Note: The AI returned ${translationsArray.length} translations for ${items.length} items. Most items were translated successfully, but there is a slight mismatch (usually an extra empty string at the end). Please quickly double-check the last few items.`);
+          const newItems = [...items];
+          const minLength = Math.min(items.length, translationsArray.length);
+          
+          for (let i = 0; i < minLength; i++) {
+            newItems[i].translatedText = translationsArray[i] || "";
+          }
+          setItems(newItems);
+
+          if (translationsArray.length !== items.length) {
+            alert(`Note: The AI returned ${translationsArray.length} translations for ${items.length} items. Most items were translated successfully, but there is a slight mismatch (usually an extra empty string at the end). Please quickly double-check the last few items.`);
+          }
+          
+          success = true;
+          break; // Break attempt loop
+        } catch (error) {
+          console.error(`Error with ${modelToTry} (Attempt ${attempt}):`, error);
+          if (attempt === 2) {
+             console.log(`${modelToTry} failed twice. Moving to next model if available.`);
+          } else {
+             // Wait briefly before retry
+             await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
       }
-    } catch (error) {
-      alert("Bulk translation failed: " + error.message);
-    } finally {
-      setBulkTranslating(false);
+      if (success) break; // Break model loop if successful
+    }
+    
+    setBulkTranslating(false);
+    
+    if (!success && !abortRef.current) {
+       alert("Bulk translation failed after trying all available models. Please check your API key, quotas, or try again later.");
     }
   };
 
@@ -210,6 +253,16 @@ export default function Editor({
     }
   };
 
+  const matchedGlossaryTerms = useMemo(() => {
+    if (!glossary || glossary.length === 0 || !items || items.length === 0) return [];
+    const combinedText = items.map(i => i.originalText || "").join("\n").toLowerCase();
+    const validTerms = glossary.filter(
+      item => item && typeof item.original === 'string' && typeof item.translation === 'string' &&
+              item.original.trim() !== '' && item.translation.trim() !== ''
+    );
+    return validTerms.filter(item => combinedText.includes(item.original.trim().toLowerCase()));
+  }, [glossary, items]);
+
   if (loading) {
     return <div className="flex-1 flex items-center justify-center">Loading XML...</div>;
   }
@@ -227,15 +280,34 @@ export default function Editor({
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           {glossary.length > 0 ? (
-            <button 
-              type="button"
-              onClick={onOpenGlossary}
-              className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded text-sm font-medium transition-colors"
-              title="Aktif özel sözlük kurallarını görüntüleyin veya düzenleyin"
-            >
-              <BookOpen size={16} />
-              <span>{glossary.length} Terim Aktif</span>
-            </button>
+            <div className="relative group">
+              <button 
+                type="button"
+                onClick={onOpenGlossary}
+                className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded text-sm font-medium transition-colors"
+                title="Aktif özel sözlük kurallarını görüntüleyin veya düzenleyin"
+              >
+                <BookOpen size={16} />
+                <span>{glossary.length} Terim (Eşleşen: {matchedGlossaryTerms.length})</span>
+              </button>
+              
+              {/* Dropdown Popover */}
+              {matchedGlossaryTerms.length > 0 && (
+                <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 w-64 bg-white border border-gray-200 shadow-xl rounded-md z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 overflow-hidden">
+                  <div className="px-3 py-2 bg-indigo-50 border-b border-indigo-100 text-xs font-bold text-indigo-800">
+                    Sistemin Yakaladığı Terimler ({matchedGlossaryTerms.length})
+                  </div>
+                  <div className="max-h-60 overflow-y-auto p-1.5 space-y-1">
+                    {matchedGlossaryTerms.map(term => (
+                      <div key={term.id} className="text-[11px] leading-tight flex flex-col px-2 py-1.5 hover:bg-gray-50 rounded border border-transparent hover:border-gray-100">
+                        <span className="font-bold text-gray-800">{term.original}</span>
+                        <span className="text-gray-500 font-medium">➜ {term.translation}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
             <button 
               type="button"
@@ -266,14 +338,24 @@ export default function Editor({
             </button>
           </div>
           
-          <button 
-            onClick={handleBulkTranslate}
-            disabled={bulkTranslating || items.length === 0}
-            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md font-medium transition-colors disabled:opacity-50"
-          >
-            {bulkTranslating ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} />}
-            Translate All
-          </button>
+          {bulkTranslating ? (
+            <button 
+              onClick={handleStopBulkTranslate}
+              className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md font-medium transition-colors"
+            >
+              <XCircle size={18} />
+              Stop
+            </button>
+          ) : (
+            <button 
+              onClick={handleBulkTranslate}
+              disabled={items.length === 0}
+              className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md font-medium transition-colors disabled:opacity-50"
+            >
+              <Zap size={18} />
+              Translate All
+            </button>
+          )}
           
           <span className="text-sm font-medium text-green-600 ml-2">{saveStatus}</span>
           <button 
