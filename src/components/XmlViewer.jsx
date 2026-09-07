@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { readXmlFile } from '../utils/fileSystem';
-import { hasStringTable } from '../utils/xmlUtils';
+
 import { Copy, Check, Search, AlertTriangle, CheckCircle, FileCode, WrapText, Loader2, Edit3, Wrench } from 'lucide-react';
 
 export default function XmlViewer({ fileHandle, onSwitchToEditor, onFixCurrentFile, isFixing = false }) {
@@ -36,9 +36,7 @@ export default function XmlViewer({ fileHandle, onSwitchToEditor, onFixCurrentFi
     loadContent();
   }, [fileHandle]);
 
-  const hasTable = useMemo(() => {
-    return hasStringTable(content);
-  }, [content]);
+
 
   const lines = useMemo(() => {
     if (!content) return [];
@@ -183,16 +181,7 @@ export default function XmlViewer({ fileHandle, onSwitchToEditor, onFixCurrentFi
             </h2>
           </div>
           
-          {/* Status Badge */}
-          {hasTable ? (
-            <span className="flex items-center gap-1 text-[11px] font-semibold bg-green-100 text-green-700 px-2 py-0.5 rounded-full border border-green-200">
-              <CheckCircle size={12} /> &lt;string_table&gt; Mevcut
-            </span>
-          ) : (
-            <span className="flex items-center gap-1 text-[11px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
-              <AlertTriangle size={12} /> &lt;string_table&gt; Bulunamadı
-            </span>
-          )}
+
 
           <span className="text-xs text-gray-500">
             {lines.length.toLocaleString()} satır • {(content.length / 1024).toFixed(1)} KB
@@ -247,30 +236,7 @@ export default function XmlViewer({ fileHandle, onSwitchToEditor, onFixCurrentFi
         </div>
       </div>
 
-      {/* Warning Notice if Missing string_table */}
-      {!hasTable && (
-        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between text-xs text-amber-900 flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <AlertTriangle size={16} className="text-amber-600 shrink-0" />
-            <span>
-              <strong>Uyarı:</strong> Bu dosyada <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">&lt;string_table&gt;</code> etiketi bulunmuyor.
-            </span>
-          </div>
 
-          {onFixCurrentFile && (
-            <button
-              type="button"
-              onClick={onFixCurrentFile}
-              disabled={isFixing}
-              className="bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:opacity-50 text-white px-3 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
-              title="Orijinal ve çeviri dosyalarını 'broken_files' klasörüne yedekleyip <string_table> ekleyerek onarır"
-            >
-              {isFixing ? <Loader2 size={12} className="animate-spin" /> : <Wrench size={12} />}
-              <span>Bu Dosyayı Onar (&lt;string_table&gt; Ekle)</span>
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Code Container with Line Numbers */}
       <div 

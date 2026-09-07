@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { translateText, translateBulk, checkTokenLimit } from '../utils/geminiApi';
 import { replaceTurkishCharacters } from '../utils/turkishReplacer';
-import { extractTranslations, applyTranslations, hasStringTable } from '../utils/xmlUtils';
+import { extractTranslations, applyTranslations, hasStringTable, hasXmlDeclaration, removeXmlDeclaration, removeStringTableTags } from '../utils/xmlUtils';
 import { readXmlFile, saveFileToFolder } from '../utils/fileSystem';
-import { Save, Loader2, ArrowRight, Zap, Calculator, Copy, Check, AlertTriangle, Eye, Wrench, BookOpen, XCircle } from 'lucide-react';
+import { Save, Loader2, ArrowRight, ArrowDown, Zap, Calculator, Copy, Check, AlertTriangle, Eye, Wrench, BookOpen, XCircle, Trash2 } from 'lucide-react';
 
 export default function Editor({ 
   fileHandle, 
+  fileCategory = "original",
   directoryHandle, 
   apiKey, 
   prompt, 
@@ -226,30 +227,73 @@ export default function Editor({
     setItems(newItems);
   };
 
+  const handleShiftDown = (index) => {
+    const newItems = [...items];
+    // Start from the end, move each translation down by one
+    for (let i = newItems.length - 1; i > index; i--) {
+      newItems[i].translatedText = newItems[i - 1].translatedText;
+    }
+    // Empty the target index
+    newItems[index].translatedText = "";
+    setItems(newItems);
+  };
+
   const handleSave = async () => {
     try {
       setSaveStatus("Saving...");
+      // 1. Generate the Turkish XML
+      let xml_TR = applyTranslations(originalXml, items);
       
-      // 1. Generate the Turkish XML (combines originalXml with user's current edits in `items`)
-      // Notice we no longer clean `items` here, so we save EXACTLY what they wrote/translated with Turkish chars.
-      const xml_TR = applyTranslations(originalXml, items);
-      
-      // 2. Generate the English XML by extracting all texts from xml_TR, cleaning them, and applying them back.
+      // 2. Generate the English XML
       const currentTexts = extractTranslations(xml_TR);
       const cleanedCurrentItems = currentTexts.map(item => ({
         ...item,
         translatedText: replaceTurkishCharacters(item.originalText)
       }));
-      const xml_EN = applyTranslations(xml_TR, cleanedCurrentItems);
+      let xml_EN = applyTranslations(xml_TR, cleanedCurrentItems);
 
-      // 3. Save both
-      await saveFileToFolder(directoryHandle, fileHandle, "backups", xml_TR);
+      // 3. Save to translated_files (English characters)
       await saveFileToFolder(directoryHandle, fileHandle, "translated_files", xml_EN);
+      
+      // 4. Save to backups (Turkish characters) - ONLY if not editing the translated file
+      if (fileCategory !== "translated_files") {
+        await saveFileToFolder(directoryHandle, fileHandle, "backups", xml_TR);
+      }
       
       setSaveStatus("Saved successfully!");
       setTimeout(() => setSaveStatus(""), 3000);
     } catch (error) {
       setSaveStatus("Error saving file");
+    }
+  };
+
+  const handleRemoveXmlHeader = async () => {
+    if (!confirm("XML başlığı (<?xml ... ?>) bu dosyadan tamamen silinecek ve şu an açık olan dosyaya anında kaydedilecektir (yedek klasörlerindeki aynı isimli dosyalara dokunulmaz). Onaylıyor musunuz?")) return;
+    const newXml = removeXmlDeclaration(originalXml);
+    setOriginalXml(newXml);
+    try {
+      const writable = await fileHandle.createWritable();
+      await writable.write(newXml);
+      await writable.close();
+      alert("XML başlığı başarıyla silindi ve açık olan dosyaya kaydedildi!");
+    } catch (err) {
+      console.error(err);
+      alert("Dosya kaydedilirken bir hata oluştu.");
+    }
+  };
+
+  const handleRemoveStringTable = async () => {
+    if (!confirm("<string_table> ve </string_table> etiketleri bu dosyadan tamamen silinecek ve şu an açık olan dosyaya anında kaydedilecektir (yedek klasörlerindeki aynı isimli dosyalara dokunulmaz). Onaylıyor musunuz?")) return;
+    const newXml = removeStringTableTags(originalXml);
+    setOriginalXml(newXml);
+    try {
+      const writable = await fileHandle.createWritable();
+      await writable.write(newXml);
+      await writable.close();
+      alert("<string_table> etiketleri başarıyla silindi ve açık olan dosyaya kaydedildi!");
+    } catch (err) {
+      console.error(err);
+      alert("Dosya kaydedilirken bir hata oluştu.");
     }
   };
 
@@ -369,30 +413,35 @@ export default function Editor({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {originalXml && !hasStringTable(originalXml) && (
-          <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-center justify-between shadow-sm">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="text-amber-600 shrink-0" size={22} />
-              <div>
-                <h4 className="text-sm font-bold text-amber-900">
-                  Dikkat: &lt;string_table&gt; Etiketi Bulunamadı!
-                </h4>
-                <p className="text-xs text-amber-700 mt-0.5">
-                  Bu dosya oyunun çeviri tablosu formatında olmayabilir (arayüz veya konfigürasyon dosyası olabilir). Ham XML içeriğini incelemek için Görüntüleyici modunu kullanabilirsiniz.
-                </p>
-              </div>
+        {originalXml && (hasXmlDeclaration(originalXml) || hasStringTable(originalXml)) && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between shadow-sm flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <BookOpen className="text-blue-600 shrink-0" size={18} />
+              <p className="text-xs text-blue-800 font-medium">
+                Bu dosyada XML başlığı veya string_table etiketi var. İstenmiyorsa buradan silebilirsiniz:
+              </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0 ml-4">
-              {onFixCurrentFile && (
+            <div className="flex items-center gap-2 shrink-0">
+              {hasXmlDeclaration(originalXml) && (
                 <button
                   type="button"
-                  onClick={onFixCurrentFile}
-                  disabled={isFixing}
-                  className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:opacity-50 text-white px-3 py-1.5 rounded-md text-xs font-semibold shrink-0 transition-colors shadow-xs"
-                  title="Orijinal ve çeviri dosyalarını 'broken_files' içine yedekleyip <string_table> ekleyerek onarır"
+                  onClick={handleRemoveXmlHeader}
+                  className="flex items-center gap-1.5 bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1.5 rounded-md text-xs font-semibold shrink-0 transition-colors shadow-sm"
+                  title="XML başlığını (<?xml ... ?>) bu dosyadan tamamen sil"
                 >
-                  {isFixing ? <Loader2 size={13} className="animate-spin" /> : <Wrench size={13} />}
-                  Dosyayı Onar (&lt;string_table&gt; Ekle)
+                  <Trash2 size={13} />
+                  XML Başlığını Sil
+                </button>
+              )}
+              {hasStringTable(originalXml) && (
+                <button
+                  type="button"
+                  onClick={handleRemoveStringTable}
+                  className="flex items-center gap-1.5 bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1.5 rounded-md text-xs font-semibold shrink-0 transition-colors shadow-sm"
+                  title="<string_table> ve </string_table> etiketlerini bu dosyadan tamamen sil"
+                >
+                  <Trash2 size={13} />
+                  &lt;string_table&gt; Sil
                 </button>
               )}
               {onSwitchToViewer && (
@@ -402,7 +451,7 @@ export default function Editor({
                   className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-md text-xs font-semibold shrink-0 transition-colors shadow-sm"
                 >
                   <Eye size={13} />
-                  Görüntüleyiciye Geç
+                  Görüntüleyici
                 </button>
               )}
             </div>
@@ -467,18 +516,29 @@ export default function Editor({
                     className="flex-1 p-3 bg-white border border-gray-300 rounded text-sm text-gray-800 min-h-[60px] focus:ring-2 focus:ring-blue-500 outline-none resize-y"
                     placeholder="Translation will appear here..."
                   />
-                  <button
-                    onClick={() => handleTranslate(index, item)}
-                    disabled={translatingId === item.id || bulkTranslating}
-                    className="flex flex-col items-center justify-center gap-1 bg-green-100 hover:bg-green-200 text-green-700 px-4 rounded border border-green-300 transition-colors disabled:opacity-50"
-                  >
-                    {translatingId === item.id ? (
-                      <Loader2 size={18} className="animate-spin" />
-                    ) : (
-                      <ArrowRight size={18} />
-                    )}
-                    <span className="text-xs font-semibold">Translate</span>
-                  </button>
+                  <div className="flex flex-col gap-2 w-20 shrink-0">
+                    <button
+                      onClick={() => handleTranslate(index, item)}
+                      disabled={translatingId === item.id || bulkTranslating}
+                      className="flex-1 flex flex-col items-center justify-center gap-1 bg-green-100 hover:bg-green-200 text-green-700 p-2 rounded border border-green-300 transition-colors disabled:opacity-50"
+                      title="Sadece bu satırı çevir"
+                    >
+                      {translatingId === item.id ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <ArrowRight size={16} />
+                      )}
+                      <span className="text-[10px] font-bold">Çevir</span>
+                    </button>
+                    <button
+                      onClick={() => handleShiftDown(index)}
+                      className="flex flex-col items-center justify-center gap-1 bg-amber-100 hover:bg-amber-200 text-amber-700 p-2 rounded border border-amber-300 transition-colors"
+                      title="Bu satırı boşalt ve metinleri aşağı kaydır"
+                    >
+                      <ArrowDown size={16} />
+                      <span className="text-[10px] font-bold">Kaydır</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

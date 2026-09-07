@@ -7,8 +7,8 @@ import GlossaryEditor from '../components/GlossaryEditor'
 import ModelSelector from '../components/ModelSelector'
 import SearchBar from '../components/SearchBar'
 import { Settings, Key, ArrowLeft, BookOpen } from 'lucide-react'
-import { hasStringTable } from '../utils/xmlUtils'
-import { readXmlFile, backupAndFixBrokenFiles } from '../utils/fileSystem'
+
+import { readXmlFile } from '../utils/fileSystem'
 
 export default function Translator({ initialMode = 'editor' }) {
   const [directoryHandle, setDirectoryHandle] = useState(null)
@@ -18,6 +18,7 @@ export default function Translator({ initialMode = 'editor' }) {
   const [invalidFiles, setInvalidFiles] = useState(new Set())
   const [isFixing, setIsFixing] = useState(false)
   const [selectedFile, setSelectedFile] = useState(null)
+  const [fileCategory, setFileCategory] = useState("original")
   const [targetItemId, setTargetItemId] = useState(null)
   const [viewMode, setViewMode] = useState(initialMode) // 'editor' | 'viewer' | 'glossary'
   const [apiKey, setApiKey] = useState(localStorage.getItem('geminiApiKey') || '')
@@ -179,64 +180,12 @@ export default function Translator({ initialMode = 'editor' }) {
     }
   }
 
-  const revalidateFiles = async (orig = originalFiles, trans = translatedFiles, bck = backupFiles) => {
-    const allFilesToCheck = [...orig, ...trans, ...bck];
-    const checkResults = await Promise.all(
-      allFilesToCheck.map(async (f) => {
-        try {
-          const content = await readXmlFile(f);
-          return { name: f.name, valid: hasStringTable(content) };
-        } catch {
-          return { name: f.name, valid: false };
-        }
-      })
-    );
-    const invalidSet = new Set(checkResults.filter(r => !r.valid).map(r => r.name));
-    setInvalidFiles(invalidSet);
-    return invalidSet;
+  const revalidateFiles = async () => {
+    return new Set();
   };
 
-  const handleFixBrokenFiles = async (targetName = null) => {
-    if (!directoryHandle) return;
-
-    const targets = targetName ? [targetName] : Array.from(invalidFiles);
-    if (targets.length === 0) {
-      alert("Onarılacak bozuk dosya bulunamadı.");
-      return;
-    }
-
-    setIsFixing(true);
-    try {
-      const result = await backupAndFixBrokenFiles(
-        directoryHandle,
-        targets,
-        originalFiles,
-        translatedFiles,
-        backupFiles
-      );
-
-      // Re-validate files to update warning icons
-      await revalidateFiles();
-
-      // If current selected file was repaired, reload it
-      if (selectedFile && targets.includes(selectedFile.name)) {
-        const currentName = selectedFile.name;
-        setSelectedFile(null);
-        setTimeout(() => {
-          const reselected = originalFiles.find(f => f.name === currentName) ||
-                             translatedFiles.find(f => f.name === currentName) ||
-                             backupFiles.find(f => f.name === currentName);
-          if (reselected) setSelectedFile(reselected);
-        }, 50);
-      }
-
-      alert(`${result.count} adet bozuk dosya onarıldı (<string_table> etiketi eklendi). Orijinal halleri 'broken_files' klasörüne güvenle yedeklendi.`);
-    } catch (err) {
-      console.error("Error fixing broken files:", err);
-      alert("Dosyalar onarılırken bir hata oluştu: " + err.message);
-    } finally {
-      setIsFixing(false);
-    }
+  const handleFixBrokenFiles = async () => {
+    // Disabled
   };
 
   const handleApiKeyChange = (e) => {
@@ -363,8 +312,9 @@ export default function Translator({ initialMode = 'editor' }) {
           isFixing={isFixing}
           hasDirectory={!!directoryHandle}
           glossaryCount={flatGlossary.length}
-          onSelectFile={(f) => {
+          onSelectFile={(f, category = "original") => {
             setSelectedFile(f);
+            setFileCategory(category);
             setTargetItemId(null);
           }} 
           selectedFile={selectedFile}
@@ -380,6 +330,7 @@ export default function Translator({ initialMode = 'editor' }) {
         {viewMode === 'editor' ? (
           <Editor 
             fileHandle={selectedFile} 
+            fileCategory={fileCategory}
             directoryHandle={directoryHandle}
             apiKey={apiKey}
             prompt={prompt}

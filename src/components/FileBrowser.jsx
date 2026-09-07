@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FolderOpen, FileText, ChevronRight, ChevronDown, CheckCircle, DatabaseBackup, AlertTriangle, Edit3, Eye, Wrench, Loader2, BookOpen } from 'lucide-react';
+import { FolderOpen, FileText, ChevronRight, ChevronDown, CheckCircle, DatabaseBackup, AlertTriangle, Edit3, Eye, Wrench, Loader2, BookOpen, Archive } from 'lucide-react';
 
 export default function FileBrowser({ 
   originalFiles, 
@@ -140,16 +140,16 @@ export default function FileBrowser({
                     return (
                       <li key={idx}>
                         <button
-                          onClick={() => onSelectFile(file)}
+                          onClick={() => onSelectFile(file, "original")}
                           className={"w-full flex items-center justify-between px-3 py-1.5 rounded text-sm text-left transition-colors " + (
-                            selectedFile?.name === file.name 
+                            selectedFile === file 
                               ? 'bg-blue-100 text-blue-700 font-medium' 
                               : 'hover:bg-gray-200 text-gray-700'
                           )}
                           title={file.name}
                         >
                           <div className="flex items-center gap-2 truncate">
-                            <FileText size={15} className={selectedFile?.name === file.name ? 'text-blue-600 shrink-0' : 'text-gray-400 shrink-0'} />
+                            <FileText size={15} className={selectedFile === file ? 'text-blue-600 shrink-0' : 'text-gray-400 shrink-0'} />
                             <span className="truncate">{file.name}</span>
                           </div>
                           
@@ -191,22 +191,22 @@ export default function FileBrowser({
                     return (
                       <li key={idx}>
                         <button
-                          onClick={() => onSelectFile(file)}
+                          onClick={() => onSelectFile(file, "backups")}
                           className={"w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded text-sm text-left transition-colors " + (
-                            selectedFile?.name === file.name 
+                            selectedFile === file 
                               ? 'bg-orange-100 text-orange-800 font-medium' 
                               : 'hover:bg-gray-200 text-gray-700'
                           )}
                           title={file.name}
                         >
                           <div className="flex items-center gap-2 truncate">
-                            <DatabaseBackup size={15} className={selectedFile?.name === file.name ? 'text-orange-600 shrink-0' : 'text-gray-400 shrink-0'} />
+                            <Archive size={15} className={selectedFile === file ? 'text-orange-600 shrink-0' : 'text-gray-400 shrink-0'} />
                             <span className="truncate">{file.name}</span>
                           </div>
                           {isInvalid && (
-                            <span title="Dikkat: Bu dosyada <string_table> etiketi bulunamadı!">
-                              <AlertTriangle size={14} className="text-amber-500 hover:text-amber-600 shrink-0" />
-                            </span>
+                            <div className="flex items-center shrink-0">
+                              <AlertTriangle size={14} className="text-amber-500 hover:text-amber-600" title="Dikkat: Bu dosyada <string_table> etiketi bulunamadı!" />
+                            </div>
                           )}
                         </button>
                       </li>
@@ -236,9 +236,9 @@ export default function FileBrowser({
                     return (
                       <li key={idx}>
                         <button
-                          onClick={() => onSelectFile(file)}
+                          onClick={() => onSelectFile(file, "translated_files")}
                           className={"w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded text-sm text-left transition-colors " + (
-                            selectedFile?.name === file.name 
+                            selectedFile === file 
                               ? 'bg-green-100 text-green-800 font-medium' 
                               : 'hover:bg-gray-200 text-gray-700'
                           )}
