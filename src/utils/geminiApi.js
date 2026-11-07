@@ -55,7 +55,8 @@ export async function checkTokenLimit(textsArray, apiKey, prompt, modelName = "g
   }
 }
 
-export async function translateBulk(textsArray, apiKey, prompt, modelName = "gemini-3.7-flash", glossary = []) {
+// `signal` (optional AbortSignal) cancels the in-flight request immediately when the user presses stop.
+export async function translateBulk(textsArray, apiKey, prompt, modelName = "gemini-3.7-flash", glossary = [], signal) {
   if (!apiKey) throw new Error("API Key is missing");
 
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -71,7 +72,7 @@ export async function translateBulk(textsArray, apiKey, prompt, modelName = "gem
   const fullPrompt = prompt + glossaryPrompt + "\n\nYou must return a valid JSON array of strings containing the translations, preserving the exact same order. Do NOT wrap in markdown blocks, just return raw JSON.\n\nArray to translate:\n" + payload;
 
   try {
-    const result = await model.generateContent(fullPrompt);
+    const result = await model.generateContent(fullPrompt, signal ? { signal } : undefined);
     let responseText = await result.response.text();
     responseText = responseText.trim();
     

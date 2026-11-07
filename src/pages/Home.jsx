@@ -48,6 +48,17 @@ export default function Home() {
               <ChevronRight className="text-gray-500 group-hover:text-amber-400 transition-colors" />
             </button>
 
+            <button
+              onClick={() => handleGameSelect('darkmessiah')}
+              className="w-full flex items-center justify-between p-4 rounded bg-gray-700/50 hover:bg-red-700/30 border border-transparent hover:border-red-500 transition-all text-left group mt-2"
+            >
+              <div className="flex flex-col">
+                <span className="font-semibold text-lg group-hover:text-red-100 transition-colors">Dark Messiah of Might &amp; Magic</span>
+                <span className="text-xs text-gray-400 mt-1">Source Localization Files · Tek Tıkla Kurulum</span>
+              </div>
+              <ChevronRight className="text-gray-500 group-hover:text-red-400 transition-colors" />
+            </button>
+
             <button disabled className="w-full flex items-center justify-between p-4 rounded text-left opacity-50 cursor-not-allowed mt-2">
               <div className="flex flex-col">
                 <span className="font-medium text-gray-400">More games coming soon...</span>
@@ -70,8 +81,8 @@ export default function Home() {
               <ChevronRight className="rotate-180" size={16} /> Back
             </button>
             <h1 className="text-3xl font-bold text-gray-100 mb-2">Select Tool</h1>
-            <p className={selectedGame === 'stalker' ? "text-blue-300" : "text-amber-300"}>
-              {selectedGame === 'stalker' ? "S.T.A.L.K.E.R.: Shadow of Chernobyl" : "The Witcher 1"}
+            <p className={selectedGame === 'stalker' ? "text-blue-300" : selectedGame === 'darkmessiah' ? "text-red-300" : "text-amber-300"}>
+              {selectedGame === 'stalker' ? "S.T.A.L.K.E.R.: Shadow of Chernobyl" : selectedGame === 'darkmessiah' ? "Dark Messiah of Might & Magic" : "The Witcher 1"}
             </p>
           </div>
           
@@ -117,6 +128,19 @@ export default function Home() {
                   </div>
                 </button>
               </>
+            ) : selectedGame === 'darkmessiah' ? (
+              <button
+                onClick={() => navigate('/darkmessiah')}
+                className="w-full flex items-center p-5 rounded-lg bg-gray-800/80 hover:bg-gray-700/80 border border-gray-600 hover:border-red-500 backdrop-blur-sm transition-all text-left group shadow-lg"
+              >
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Languages className="text-red-400 group-hover:text-red-300" size={20} />
+                    <span className="font-bold text-lg text-white">Türkçe Yama Stüdyosu</span>
+                  </div>
+                  <span className="text-xs text-gray-400 leading-relaxed">Altyazı, görev, menü ve eşya metinlerini çevirin. Yamayı oyuna tek tıkla kurun / kaldırın; Türkçe, İngilizceden ayrı bir dil olarak seçilir.</span>
+                </div>
+              </button>
             ) : (
               <button
                 onClick={() => navigate('/witcher')}
