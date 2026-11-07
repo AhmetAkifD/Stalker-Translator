@@ -155,14 +155,17 @@ export default function DarkMessiahTranslator() {
     setGlossariesMap((prev) => ({ ...prev, [fromName]: newFrom, [toName]: newTo }));
   };
 
+  // All glossaries merged. When a term is in several files, a copy that already has a Turkish
+  // translation wins over an empty one (e.g. wiki-imported lists that are still being filled in).
   const flatGlossary = useMemo(() => {
-    const out = [];
-    const seen = new Set();
+    const byKey = new Map();
     for (const term of Object.values(glossariesMap).flat()) {
       const key = (term?.original || '').trim().toLowerCase();
-      if (key && !seen.has(key)) { seen.add(key); out.push(term); }
+      if (!key) continue;
+      const prev = byKey.get(key);
+      if (!prev || (!prev.translation?.trim() && term.translation?.trim())) byKey.set(key, term);
     }
-    return out;
+    return [...byKey.values()];
   }, [glossariesMap]);
 
   const headerBtn = (mode, Icon, label) => (
