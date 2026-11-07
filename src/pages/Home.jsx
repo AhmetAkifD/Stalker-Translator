@@ -37,6 +37,17 @@ export default function Home() {
               <ChevronRight className="text-gray-500 group-hover:text-blue-400 transition-colors" />
             </button>
             
+            <button
+              onClick={() => handleGameSelect('witcher')}
+              className="w-full flex items-center justify-between p-4 rounded bg-gray-700/50 hover:bg-amber-600/30 border border-transparent hover:border-amber-500 transition-all text-left group mt-2"
+            >
+              <div className="flex flex-col">
+                <span className="font-semibold text-lg group-hover:text-amber-100 transition-colors">The Witcher 1</span>
+                <span className="text-xs text-gray-400 mt-1">TLG Localization Files</span>
+              </div>
+              <ChevronRight className="text-gray-500 group-hover:text-amber-400 transition-colors" />
+            </button>
+
             <button disabled className="w-full flex items-center justify-between p-4 rounded text-left opacity-50 cursor-not-allowed mt-2">
               <div className="flex flex-col">
                 <span className="font-medium text-gray-400">More games coming soon...</span>
@@ -59,48 +70,67 @@ export default function Home() {
               <ChevronRight className="rotate-180" size={16} /> Back
             </button>
             <h1 className="text-3xl font-bold text-gray-100 mb-2">Select Tool</h1>
-            <p className="text-blue-300">S.T.A.L.K.E.R.: Shadow of Chernobyl</p>
+            <p className={selectedGame === 'stalker' ? "text-blue-300" : "text-amber-300"}>
+              {selectedGame === 'stalker' ? "S.T.A.L.K.E.R.: Shadow of Chernobyl" : "The Witcher 1"}
+            </p>
           </div>
           
           <div className="flex flex-col gap-3">
-            <button
-              onClick={() => navigate('/translator')}
-              className="w-full flex items-center p-5 rounded-lg bg-gray-800/80 hover:bg-gray-700/80 border border-gray-600 hover:border-blue-500 backdrop-blur-sm transition-all text-left group shadow-lg"
-            >
-              <div className="flex flex-col">
-                <div className="flex items-center gap-2 mb-1">
-                  <Languages className="text-blue-400 group-hover:text-blue-300" size={20} />
-                  <span className="font-bold text-lg text-white">İngilizceden Türkçeye Çeviri</span>
-                </div>
-                <span className="text-xs text-gray-400 leading-relaxed">Ana çeviri arayüzü. Gemini Yapay Zeka kullanarak XML dosyalarını toplu olarak çevirin ve düzenleyin.</span>
-              </div>
-            </button>
+            {selectedGame === 'stalker' ? (
+              <>
+                <button
+                  onClick={() => navigate('/translator')}
+                  className="w-full flex items-center p-5 rounded-lg bg-gray-800/80 hover:bg-gray-700/80 border border-gray-600 hover:border-blue-500 backdrop-blur-sm transition-all text-left group shadow-lg"
+                >
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Languages className="text-blue-400 group-hover:text-blue-300" size={20} />
+                      <span className="font-bold text-lg text-white">İngilizceden Türkçeye Çeviri</span>
+                    </div>
+                    <span className="text-xs text-gray-400 leading-relaxed">Ana çeviri arayüzü. Gemini Yapay Zeka kullanarak XML dosyalarını toplu olarak çevirin ve düzenleyin.</span>
+                  </div>
+                </button>
 
-            <button
-              onClick={() => navigate('/glossary')}
-              className="w-full flex items-center p-5 rounded-lg bg-gray-800/80 hover:bg-gray-700/80 border border-gray-600 hover:border-blue-500 backdrop-blur-sm transition-all text-left group shadow-lg"
-            >
-              <div className="flex flex-col">
-                <div className="flex items-center gap-2 mb-1">
-                  <BookOpen className="text-blue-400 group-hover:text-blue-300" size={20} />
-                  <span className="font-bold text-lg text-white">Özel Çeviri Sözlüğü (Glossary)</span>
-                </div>
-                <span className="text-xs text-gray-400 leading-relaxed">Oyun içi özel terimleri, fraksiyon adlarını ve çeviri kurallarını belirleyin. Model bu kurallara harfiyen uyar.</span>
-              </div>
-            </button>
+                <button
+                  onClick={() => navigate('/glossary')}
+                  className="w-full flex items-center p-5 rounded-lg bg-gray-800/80 hover:bg-gray-700/80 border border-gray-600 hover:border-blue-500 backdrop-blur-sm transition-all text-left group shadow-lg"
+                >
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2 mb-1">
+                      <BookOpen className="text-blue-400 group-hover:text-blue-300" size={20} />
+                      <span className="font-bold text-lg text-white">Özel Çeviri Sözlüğü (Glossary)</span>
+                    </div>
+                    <span className="text-xs text-gray-400 leading-relaxed">Oyun içi özel terimleri, fraksiyon adlarını ve çeviri kurallarını belirleyin. Model bu kurallara harfiyen uyar.</span>
+                  </div>
+                </button>
 
-            <button
-              onClick={() => navigate('/deasciifier')}
-              className="w-full flex items-center p-5 rounded-lg bg-gray-800/80 hover:bg-gray-700/80 border border-gray-600 hover:border-blue-500 backdrop-blur-sm transition-all text-left group shadow-lg"
-            >
-              <div className="flex flex-col">
-                <div className="flex items-center gap-2 mb-1">
-                  <Sparkles className="text-blue-400 group-hover:text-blue-300" size={20} />
-                  <span className="font-bold text-lg text-white">Türkçe Karakter Restorasyonu</span>
+                <button
+                  onClick={() => navigate('/deasciifier')}
+                  className="w-full flex items-center p-5 rounded-lg bg-gray-800/80 hover:bg-gray-700/80 border border-gray-600 hover:border-blue-500 backdrop-blur-sm transition-all text-left group shadow-lg"
+                >
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Sparkles className="text-blue-400 group-hover:text-blue-300" size={20} />
+                      <span className="font-bold text-lg text-white">Türkçe Karakter Restorasyonu</span>
+                    </div>
+                    <span className="text-xs text-gray-400 leading-relaxed">De-asciifier Algoritması. Çevrilmiş İngilizce karakterli metinlerinizi otomatik Türkçe karakterlere dönüştürün.</span>
+                  </div>
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => navigate('/witcher')}
+                className="w-full flex items-center p-5 rounded-lg bg-gray-800/80 hover:bg-gray-700/80 border border-gray-600 hover:border-amber-500 backdrop-blur-sm transition-all text-left group shadow-lg"
+              >
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Languages className="text-amber-400 group-hover:text-amber-300" size={20} />
+                    <span className="font-bold text-lg text-white">TLG Çeviri Sistemi</span>
+                  </div>
+                  <span className="text-xs text-gray-400 leading-relaxed">The Witcher 1 TLG dosyalarını XML formatına çevirin, düzenleyin ve geri dönüştürün. Yedekleme sistemi aktiftir.</span>
                 </div>
-                <span className="text-xs text-gray-400 leading-relaxed">De-asciifier Algoritması. Çevrilmiş İngilizce karakterli metinlerinizi otomatik Türkçe karakterlere dönüştürün.</span>
-              </div>
-            </button>
+              </button>
+            )}
           </div>
         </div>
 
