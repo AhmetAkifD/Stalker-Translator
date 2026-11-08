@@ -88,6 +88,52 @@ export async function translateBulk(textsArray, apiKey, prompt, modelName = "gem
   }
 }
 
+// Translates rows by ID instead of by position. `entries` is [{ id, text }]; the model gets
+// {"<id>": "<text>", ...} and must answer with the same keys. Returns a Map(id -> translation)
+// containing only the IDs that actually came back, so a skipped row stays missing instead of
+// shifting every following translation by one.
+export async function translateKeyed(entries, apiKey, prompt, modelName = "gemini-3.7-flash", glossary = [], signal) {
+  if (!apiKey) throw new Error("API Key is missing");
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    generationConfig: { responseMimeType: "application/json" },
+  });
+
+  const payload = {};
+  for (const e of entries) payload[e.id] = e.text;
+  const glossaryPrompt = buildGlossaryPrompt(glossary, entries.map((e) => e.text));
+  const fullPrompt = prompt + glossaryPrompt +
+    "\n\nYou are given a JSON object. Each key is a row ID and each value is the text to translate. " +
+    "Return a JSON object with exactly the same keys, each mapped to the translation of its own value. " +
+    "Translate every key; never merge, split, skip or rename keys. Return raw JSON only, no markdown.\n\nObject to translate:\n" +
+    JSON.stringify(payload);
+
+  let parsed;
+  try {
+    const result = await model.generateContent(fullPrompt, signal ? { signal } : undefined);
+    let responseText = (await result.response.text()).trim();
+    if (responseText.startsWith("```")) {
+      responseText = responseText.replace(/^```[a-zA-Z]*\n?/, "").replace(/\n?```$/, "");
+    }
+    parsed = JSON.parse(responseText.trim());
+  } catch (error) {
+    console.error("Translation error:", error);
+    throw new Error(`Translation failed using ${modelName}: ` + error.message);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`Translation failed using ${modelName}: response is not a JSON object`);
+  }
+
+  const out = new Map();
+  for (const e of entries) {
+    const v = parsed[e.id];
+    if (typeof v === "string" && v.trim() !== "") out.set(e.id, v);
+  }
+  return out;
+}
+
 export async function translateText(text, apiKey, prompt, modelName = "gemini-3.7-flash", glossary = []) {
   if (!apiKey) throw new Error("API Key is missing");
 

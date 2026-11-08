@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { translateText, translateBulk } from '../../utils/geminiApi';
+import { translateText, translateKeyed } from '../../utils/geminiApi';
 import { readEntries, writeEntries } from '../../utils/darkmessiah/workspace';
 import { checkFormatting, DM_FORMAT_RULES } from '../../utils/darkmessiah/valveLocalization';
 import { Save, Loader2, Zap, Copy, Check, BookOpen, Search, AlertTriangle, ChevronLeft, ChevronRight, Square } from 'lucide-react';
@@ -166,19 +166,20 @@ export default function DarkMessiahEditor({
     setTranslatingId(null);
   };
 
-  // One request per chunk. Returns the translations, 'split' when the answer was the wrong size
-  // (missing rows / cut-off JSON: a smaller chunk fixes that, retrying the same size only wastes quota),
-  // or null when every model failed (network, quota...) or the user pressed stop.
+  // One request per chunk. Rows are sent with IDs and answers are matched by ID, so a skipped row
+  // can never shift the others. Returns Map(itemId -> translation) with the rows that came back,
+  // 'split' when the JSON answer was cut off (too big), or null when every model failed / stop.
   const requestChunk = async (chunk) => {
     const canSplit = chunk.length > MIN_SPLIT;
+    const entries = chunk.map((b, k) => ({ id: 'r' + k, text: b.original }));
     for (const m of modelsToTry) {
       for (let attempt = 0; attempt < 2; attempt++) {
         if (abortRef.current) return null;
         try {
-          const res = await translateBulk(chunk.map((b) => b.original), apiKey, fullPrompt, m, glossary, controllerRef.current?.signal);
-          if (Array.isArray(res) && res.length === chunk.length) return res;
-          console.warn(`${m}: ${chunk.length} satır gönderildi, ${Array.isArray(res) ? res.length : 'geçersiz'} cevap geldi.`);
-          if (canSplit) return 'split';
+          const res = await translateKeyed(entries, apiKey, fullPrompt, m, glossary, controllerRef.current?.signal);
+          // A valid answer is returned even if some (or all) rows are missing: those rows are retried
+          // on their own by the caller instead of being treated as an API failure.
+          return new Map(chunk.flatMap((b, k) => (res.has('r' + k) ? [[b.id, res.get('r' + k)]] : [])));
         } catch (err) {
           if (abortRef.current) return null;
           console.error(err);
@@ -203,9 +204,10 @@ export default function DarkMessiahEditor({
     let done = 0;
     let requests = 0;
     let failed = 0;
+    const skipped = [];
+    const retries = new Map();
     setBulk({ done, total: todo.length, requests });
 
-    // A chunk whose answer comes back broken is split in half and retried, instead of failing entirely.
     const queue = [...chunks];
     while (queue.length && !abortRef.current) {
       const chunk = queue.shift();
@@ -213,11 +215,22 @@ export default function DarkMessiahEditor({
       setBulk({ done, total: todo.length, requests });
       const res = await requestChunk(chunk);
       if (res === 'split') {
+        // Answer was cut off: send the same rows again as two smaller requests.
         const mid = Math.ceil(chunk.length / 2);
         queue.unshift(chunk.slice(0, mid), chunk.slice(mid));
       } else if (res) {
-        updateTranslations(new Map(chunk.map((b, k) => [b.id, String(res[k] ?? '')])));
-        done += chunk.length;
+        updateTranslations(res);
+        done += res.size;
+        // Rows the model skipped are re-sent on their own (at most twice), then left untranslated.
+        const missing = chunk.filter((b) => !res.has(b.id));
+        const again = [];
+        for (const b of missing) {
+          const n = (retries.get(b.id) || 0) + 1;
+          retries.set(b.id, n);
+          if (n <= 2) again.push(b);
+          else { skipped.push(b); done++; }
+        }
+        if (again.length) queue.unshift(again);
       } else if (!abortRef.current) {
         // Every model failed (usually quota or network): stop instead of burning more requests.
         failed = todo.length - done;
@@ -228,6 +241,7 @@ export default function DarkMessiahEditor({
     controllerRef.current = null;
     setBulk(null);
     if (failed) alert(`API hatası nedeniyle ${failed} satır çevrilemedi (kota veya bağlantı sorunu olabilir; ayrıntı tarayıcı konsolunda). Çevrilenler korunur, "Toplu Çevir" ile kalanlara devam edebilirsiniz.`);
+    else if (skipped.length) alert(`Model ${skipped.length} satırı tekrar denemelere rağmen çevirmedi; bu satırlar boş bırakıldı ve diğer çevirileri etkilemedi:\n${skipped.slice(0, 10).map((b) => b.key.trim()).join(', ')}${skipped.length > 10 ? ', ...' : ''}`);
   };
 
   const handleStop = () => {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { translateText, translateBulk, checkTokenLimit } from '../utils/geminiApi';
+import { translateText, translateKeyed, checkTokenLimit } from '../utils/geminiApi';
 import { replaceTurkishCharacters } from '../utils/turkishReplacer';
 import { extractTranslations, applyTranslations, hasStringTable, hasXmlDeclaration, removeXmlDeclaration, removeStringTableTags } from '../utils/xmlUtils';
 import { readXmlFile, saveFileToFolder } from '../utils/fileSystem';
@@ -133,71 +133,57 @@ export default function Editor({
 
     setBulkTranslating(true);
     abortRef.current = false;
-    
-    const originalTexts = items.map(i => i.originalText);
-    
+
+    // Every row is sent with its own ID ("r0", "r1", ...) and answers are matched by ID, not by position.
+    // If the model skips a row, only that row stays untranslated; the next attempt re-sends just the missing rows.
+    let pending = items.map((item, i) => ({ id: 'r' + i, index: i, text: item.originalText }));
+    let translatedCount = 0;
+
     // Start fallback from the selected model and move down the priority list
     const startIndex = fallbackModels ? fallbackModels.indexOf(selectedModel) : -1;
     const modelsToTry = fallbackModels && fallbackModels.length > 0
       ? fallbackModels.slice(startIndex >= 0 ? startIndex : 0)
       : [selectedModel];
-    
-    let success = false;
 
-    for (const modelToTry of modelsToTry) {
-      if (abortRef.current) {
-        console.log("Translation stopped by user.");
-        break;
-      }
-      
-      // Try each model up to 2 times
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        if (abortRef.current) break;
-        
-        console.log(`Trying model: ${modelToTry}, Attempt: ${attempt}`);
-        
-        try {
-          const translationsArray = await translateBulk(originalTexts, apiKey, prompt, modelToTry, glossary);
-          
-          if (!Array.isArray(translationsArray)) {
-            throw new Error("API did not return a valid JSON array.");
-          }
-          
-          if (translationsArray.length === 0) {
-            throw new Error("API returned an empty array.");
-          }
-
-          const newItems = [...items];
-          const minLength = Math.min(items.length, translationsArray.length);
-          
-          for (let i = 0; i < minLength; i++) {
-            newItems[i].translatedText = translationsArray[i] || "";
-          }
-          setItems(newItems);
-
-          if (translationsArray.length !== items.length) {
-            alert(`Note: The AI returned ${translationsArray.length} translations for ${items.length} items. Most items were translated successfully, but there is a slight mismatch (usually an extra empty string at the end). Please quickly double-check the last few items.`);
-          }
-          
-          success = true;
-          break; // Break attempt loop
-        } catch (error) {
-          console.error(`Error with ${modelToTry} (Attempt ${attempt}):`, error);
-          if (attempt === 2) {
-             console.log(`${modelToTry} failed twice. Moving to next model if available.`);
-          } else {
-             // Wait briefly before retry
-             await new Promise(resolve => setTimeout(resolve, 1000));
+    // One request: tries each model up to 2 times (errors, quota...) until one gives a valid answer.
+    const requestOnce = async (rows) => {
+      for (const modelToTry of modelsToTry) {
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          if (abortRef.current) return null;
+          console.log(`Trying model: ${modelToTry}, Attempt: ${attempt}, rows: ${rows.length}`);
+          try {
+            return await translateKeyed(rows, apiKey, prompt, modelToTry, glossary);
+          } catch (error) {
+            console.error(`Error with ${modelToTry} (Attempt ${attempt}):`, error);
+            if (attempt === 1) await new Promise(resolve => setTimeout(resolve, 1000));
           }
         }
+        console.log(`${modelToTry} failed twice. Moving to next model if available.`);
       }
-      if (success) break; // Break model loop if successful
+      return null;
+    };
+
+    // First round sends every row; up to 2 more rounds re-send only the rows the model skipped.
+    let apiFailed = false;
+    for (let round = 0; round < 3 && pending.length > 0 && !abortRef.current; round++) {
+      const result = await requestOnce(pending);
+      if (!result) { apiFailed = true; break; }
+
+      const byIndex = new Map(pending.filter(p => result.has(p.id)).map(p => [p.index, result.get(p.id)]));
+      setItems(prev => prev.map((item, i) => byIndex.has(i) ? { ...item, translatedText: byIndex.get(i) } : item));
+      translatedCount += byIndex.size;
+      pending = pending.filter(p => !result.has(p.id));
+      if (pending.length > 0) console.warn(`${pending.length} row(s) missing from the answer, re-sending only those.`);
     }
-    
+
     setBulkTranslating(false);
-    
-    if (!success && !abortRef.current) {
+
+    if (abortRef.current) return;
+    if (apiFailed && translatedCount === 0) {
        alert("Bulk translation failed after trying all available models. Please check your API key, quotas, or try again later.");
+    } else if (pending.length > 0) {
+       const ids = pending.slice(0, 10).map(p => items[p.index].id).join(', ');
+       alert(`${translatedCount} rows translated. ${pending.length} row(s) could not be translated and kept their previous text: ${ids}${pending.length > 10 ? ', ...' : ''}`);
     }
   };
 
