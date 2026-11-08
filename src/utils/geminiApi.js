@@ -55,39 +55,6 @@ export async function checkTokenLimit(textsArray, apiKey, prompt, modelName = "g
   }
 }
 
-// `signal` (optional AbortSignal) cancels the in-flight request immediately when the user presses stop.
-export async function translateBulk(textsArray, apiKey, prompt, modelName = "gemini-3.7-flash", glossary = [], signal) {
-  if (!apiKey) throw new Error("API Key is missing");
-
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ 
-    model: modelName,
-    generationConfig: {
-      responseMimeType: "application/json",
-    }
-  });
-
-  const payload = JSON.stringify(textsArray);
-  const glossaryPrompt = buildGlossaryPrompt(glossary, textsArray);
-  const fullPrompt = prompt + glossaryPrompt + "\n\nYou must return a valid JSON array of strings containing the translations, preserving the exact same order. Do NOT wrap in markdown blocks, just return raw JSON.\n\nArray to translate:\n" + payload;
-
-  try {
-    const result = await model.generateContent(fullPrompt, signal ? { signal } : undefined);
-    let responseText = await result.response.text();
-    responseText = responseText.trim();
-    
-    if (responseText.startsWith("```")) {
-      responseText = responseText.replace(/^```[a-zA-Z]*\n?/, "");
-      responseText = responseText.replace(/\n?```$/, "");
-    }
-    
-    return JSON.parse(responseText.trim());
-  } catch (error) {
-    console.error("Translation error:", error);
-    throw new Error(`Translation failed using ${modelName}: ` + error.message);
-  }
-}
-
 // Translates rows by ID instead of by position. `entries` is [{ id, text }]; the model gets
 // {"<id>": "<text>", ...} and must answer with the same keys. Returns a Map(id -> translation)
 // containing only the IDs that actually came back, so a skipped row stays missing instead of
