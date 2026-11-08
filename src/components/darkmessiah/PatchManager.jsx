@@ -1,64 +1,26 @@
 import { useState, useEffect, useCallback } from 'react';
-import { detectGame, validateGame, getStatus, installPatch, uninstallPatch, setLanguage } from '../../utils/darkmessiah/gameApi';
-import { Download, Trash2, Loader2, CheckCircle2, XCircle, Search, RefreshCw, Languages, AlertTriangle, Gamepad2, Info } from 'lucide-react';
+import { getStatus, installPatch, uninstallPatch, setLanguage } from '../../utils/darkmessiah/gameApi';
+import { Download, Trash2, Loader2, CheckCircle2, XCircle, RefreshCw, Languages, AlertTriangle, Gamepad2, Info, Settings } from 'lucide-react';
 
-const STORAGE_KEY = 'dmGamePath';
-
-export default function PatchManager({ hasWorkspace, collectPatch, progress }) {
-  const [gamePath, setGamePath] = useState(localStorage.getItem(STORAGE_KEY) || '');
-  const [validation, setValidation] = useState(null);
+// `game` comes from useGamePath() (the location itself is edited on the settings page).
+export default function PatchManager({ hasWorkspace, collectPatch, progress, game, onOpenSettings }) {
+  const validation = game.validation;
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState(null); // { type, text }
   const [enableTurkish, setEnableTurkish] = useState(true);
 
-  const refresh = useCallback(async (p = gamePath) => {
-    if (!p.trim()) { setValidation(null); setStatus(null); return; }
+  const refresh = useCallback(async () => {
+    if (!validation?.ok) { setStatus(null); return; }
     try {
-      const v = await validateGame(p);
-      setValidation(v);
-      setStatus(v.ok ? await getStatus(v.root) : null);
+      setStatus(await getStatus(validation.root));
     } catch (err) {
-      setValidation({ ok: false, error: err.message });
       setStatus(null);
-    }
-  }, [gamePath]);
-
-  useEffect(() => {
-    (async () => {
-      if (gamePath) return refresh(gamePath);
-      try {
-        const d = await detectGame();
-        if (d.ok) {
-          setGamePath(d.root);
-          localStorage.setItem(STORAGE_KEY, d.root);
-          refresh(d.root);
-        }
-      } catch (err) {
-        setMessage({ type: 'error', text: err.message });
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const savePath = async (p) => {
-    setGamePath(p);
-    localStorage.setItem(STORAGE_KEY, p);
-    await refresh(p);
-  };
-
-  const handleDetect = async () => {
-    setBusy('detect');
-    setMessage(null);
-    try {
-      const d = await detectGame();
-      if (d.ok) await savePath(d.root);
-      else setMessage({ type: 'error', text: d.error });
-    } catch (err) {
       setMessage({ type: 'error', text: err.message });
     }
-    setBusy('');
-  };
+  }, [validation]);
+
+  useEffect(() => { refresh(); }, [refresh]);
 
   const run = async (key, fn) => {
     setBusy(key);
@@ -102,35 +64,26 @@ export default function PatchManager({ hasWorkspace, collectPatch, progress }) {
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
       <div className="max-w-3xl mx-auto space-y-5">
-        {/* Game location */}
-        <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="bg-red-100 p-2 rounded-lg"><Gamepad2 className="text-red-700" size={22} /></div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-800">Oyun Konumu</h2>
-              <p className="text-sm text-gray-500">mm.exe dosyasının bulunduğu klasör. Bu bilgi tarayıcıda saklanır.</p>
-            </div>
+        {/* Game location summary (edited in Settings) */}
+        <section className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 flex items-center gap-3">
+          <div className="bg-red-100 p-2 rounded-lg shrink-0"><Gamepad2 className="text-red-700" size={20} /></div>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold text-gray-500 uppercase">Oyun Konumu</div>
+            {validation?.ok ? (
+              <div className="flex items-center gap-1.5 text-sm text-green-700 min-w-0">
+                <CheckCircle2 size={15} className="shrink-0" />
+                <span className="font-mono truncate" title={validation.root}>{validation.root}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 text-sm text-red-600">
+                <XCircle size={15} className="shrink-0" />
+                <span>{game.detecting ? 'Oyun aranıyor...' : validation?.error || game.detectError || 'Oyun konumu ayarlanmadı.'}</span>
+              </div>
+            )}
           </div>
-          <div className="flex gap-2">
-            <input
-              value={gamePath}
-              onChange={(e) => setGamePath(e.target.value)}
-              onBlur={(e) => savePath(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && savePath(e.currentTarget.value)}
-              placeholder="C:\Program Files (x86)\Steam\steamapps\common\Dark Messiah Might and Magic Single Player"
-              className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-red-500 outline-none"
-            />
-            <button onClick={handleDetect} disabled={!!busy} className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold bg-gray-100 hover:bg-gray-200 rounded-md border border-gray-300 disabled:opacity-50">
-              {busy === 'detect' ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-              Otomatik Bul
-            </button>
-          </div>
-          {validation && (
-            <div className={`mt-3 flex items-center gap-2 text-sm ${validation.ok ? 'text-green-700' : 'text-red-600'}`}>
-              {validation.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
-              {validation.ok ? <span>Bulundu: <span className="font-mono">{validation.exe}</span></span> : validation.error}
-            </div>
-          )}
+          <button onClick={onOpenSettings} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold bg-gray-100 hover:bg-gray-200 rounded-md border border-gray-300 shrink-0">
+            <Settings size={15} /> Değiştir
+          </button>
         </section>
 
         {/* Status + actions */}

@@ -4,9 +4,14 @@ import FileBrowser from '../components/FileBrowser'
 import Editor from '../components/Editor'
 import XmlViewer from '../components/XmlViewer'
 import GlossaryEditor from '../components/GlossaryEditor'
-import ModelSelector from '../components/ModelSelector'
 import SearchBar from '../components/SearchBar'
-import { Settings, Key, ArrowLeft, BookOpen } from 'lucide-react'
+import AppHeader, { HeaderButton } from '../components/shared/AppHeader'
+import SettingsPage from '../components/shared/SettingsPage'
+import AiSettingsSection from '../components/shared/AiSettingsSection'
+import { useAiSettings } from '../hooks/useAiSettings'
+import { BookOpen } from 'lucide-react'
+
+const STALKER_DEFAULT_PROMPT = 'Translate this game dialogue to Turkish. Just return the translation without any markdown or quotes.'
 
 import { readXmlFile } from '../utils/fileSystem'
 
@@ -21,15 +26,10 @@ export default function Translator({ initialMode = 'editor' }) {
   const [fileCategory, setFileCategory] = useState("original")
   const [targetItemId, setTargetItemId] = useState(null)
   const [viewMode, setViewMode] = useState(initialMode) // 'editor' | 'viewer' | 'glossary'
-  const [apiKey, setApiKey] = useState(localStorage.getItem('geminiApiKey') || '')
-  const [prompt, setPrompt] = useState(localStorage.getItem('geminiPrompt') || 'Translate this game dialogue to Turkish. Just return the translation without any markdown or quotes.')
-  
-  const defaultModels = ['gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.6-pro'];
-  const savedModels = localStorage.getItem('geminiCustomModels');
-  const [models, setModels] = useState(savedModels ? JSON.parse(savedModels) : defaultModels);
-  
-  const [model, setModel] = useState(localStorage.getItem('geminiModel') || models[0] || 'gemini-3.7-flash')
-  
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const ai = useAiSettings({ promptKey: 'geminiPrompt', defaultPrompt: STALKER_DEFAULT_PROMPT })
+  const { apiKey, prompt, model, models } = ai
+
   useEffect(() => {
     if (initialMode) {
       setViewMode(initialMode);
@@ -188,24 +188,6 @@ export default function Translator({ initialMode = 'editor' }) {
     // Disabled
   };
 
-  const handleApiKeyChange = (e) => {
-    const val = e.target.value
-    setApiKey(val)
-    localStorage.setItem('geminiApiKey', val)
-  }
-
-  const handlePromptChange = (e) => {
-    const val = e.target.value
-    setPrompt(val)
-    localStorage.setItem('geminiPrompt', val)
-  }
-
-  const handleModelChange = (e) => {
-    const val = e.target.value
-    setModel(val)
-    localStorage.setItem('geminiModel', val)
-  }
-
   const startResizing = (e) => setIsResizing(true)
   const stopResizing = () => setIsResizing(false)
   const resize = (e) => {
@@ -221,82 +203,33 @@ export default function Translator({ initialMode = 'editor' }) {
       onMouseUp={stopResizing}
       onMouseLeave={stopResizing}
     >
-      {/* Header / Settings Bar */}
-      <header className="bg-white border-b border-gray-200 shadow-sm p-4 flex gap-4 items-center flex-wrap shrink-0">
-        <button 
-          onClick={() => navigate('/')} 
-          className="mr-2 p-2 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors"
-          title="Back to Home"
-        >
-          <ArrowLeft size={20} />
-        </button>
-        <div className="flex items-center gap-2 font-bold text-lg text-gray-800 mr-2">
-          <Settings className="text-blue-600" />
-          <span>Game XML Translator</span>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setViewMode(viewMode === 'glossary' ? 'editor' : 'glossary')}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-            viewMode === 'glossary' 
-              ? 'bg-blue-100 text-blue-800 shadow-inner' 
-              : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
-          }`}
-        >
-          <BookOpen size={16} className={viewMode === 'glossary' ? 'text-blue-600' : 'text-gray-500'} />
-          <span>Özel Sözlük ({flatGlossary.length})</span>
-        </button>
-        
-        <div className="flex-1 flex gap-3 items-center">
-          <ModelSelector 
-            selectedModel={model} 
-            onSelectModel={(newModel) => {
-              setModel(newModel)
-              localStorage.setItem('geminiModel', newModel)
-            }}
-            models={models}
-            setModels={(newModels) => {
-              setModels(newModels)
-              localStorage.setItem('geminiCustomModels', JSON.stringify(newModels))
+      <AppHeader
+        title="S.T.A.L.K.E.R.: SHADOW OF CHERNOBYL · XML ÇEVİRİ"
+        accent="blue"
+        onBack={() => navigate('/')}
+        settingsOpen={settingsOpen}
+        onToggleSettings={() => setSettingsOpen((o) => !o)}
+      >
+        <div className="mr-2">
+          <SearchBar
+            directoryHandle={directoryHandle}
+            files={originalFiles}
+            onSelectResult={(fileHandle, id) => {
+              setSettingsOpen(false);
+              setViewMode('editor');
+              setSelectedFile(fileHandle);
+              setTargetItemId(id);
             }}
           />
-
-          <div className="flex-1">
-            <label className="block text-xs font-semibold text-gray-500 mb-1">System Prompt</label>
-            <input 
-              type="text" 
-              value={prompt}
-              onChange={handlePromptChange}
-              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-              placeholder="E.g. Translate to Turkish..."
-            />
-          </div>
-          <div className="w-56">
-            <label className="block text-xs font-semibold text-gray-500 mb-1 flex items-center gap-1">
-              <Key size={12}/> Gemini API Key
-            </label>
-            <input 
-              type="password" 
-              value={apiKey}
-              onChange={handleApiKeyChange}
-              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-              placeholder="AIzaSy..."
-            />
-          </div>
-          <div className="flex flex-col justify-end">
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Search in XMLs</label>
-            <SearchBar 
-              directoryHandle={directoryHandle} 
-              files={originalFiles} 
-              onSelectResult={(fileHandle, id) => {
-                setSelectedFile(fileHandle);
-                setTargetItemId(id);
-              }}
-            />
-          </div>
         </div>
-      </header>
+        <HeaderButton
+          icon={BookOpen}
+          label={`Sözlük (${flatGlossary.length})`}
+          accent="blue"
+          active={viewMode === 'glossary' && !settingsOpen}
+          onClick={() => { setSettingsOpen(false); setViewMode(viewMode === 'glossary' ? 'editor' : 'glossary'); }}
+        />
+      </AppHeader>
 
       {/* Main Content */}
       <main className="flex-1 flex overflow-hidden">
@@ -307,12 +240,13 @@ export default function Translator({ initialMode = 'editor' }) {
           sidebarWidth={sidebarWidth}
           invalidFiles={invalidFiles}
           viewMode={viewMode}
-          onViewModeChange={(mode) => setViewMode(mode)}
+          onViewModeChange={(mode) => { setSettingsOpen(false); setViewMode(mode); }}
           onFixBrokenFiles={handleFixBrokenFiles}
           isFixing={isFixing}
           hasDirectory={!!directoryHandle}
           glossaryCount={flatGlossary.length}
           onSelectFile={(f, category = "original") => {
+            setSettingsOpen(false);
             setSelectedFile(f);
             setFileCategory(category);
             setTargetItemId(null);
@@ -327,8 +261,14 @@ export default function Translator({ initialMode = 'editor' }) {
           onMouseDown={startResizing}
         />
 
+        <div className="flex-1 flex min-w-0 relative">
+        {settingsOpen && (
+          <SettingsPage gameName="S.T.A.L.K.E.R.: Shadow of Chernobyl" accent="blue" onClose={() => setSettingsOpen(false)}>
+            <AiSettingsSection ai={ai} accent="blue" />
+          </SettingsPage>
+        )}
         {viewMode === 'editor' ? (
-          <Editor 
+          <Editor
             fileHandle={selectedFile} 
             fileCategory={fileCategory}
             directoryHandle={directoryHandle}
@@ -364,6 +304,7 @@ export default function Translator({ initialMode = 'editor' }) {
             onMoveTerm={handleMoveTerm}
           />
         )}
+        </div>
       </main>
     </div>
   )

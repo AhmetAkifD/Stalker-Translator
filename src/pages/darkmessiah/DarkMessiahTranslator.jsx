@@ -1,11 +1,16 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Key, FolderOpen, Download, RotateCcw } from 'lucide-react';
+import { BookOpen, FolderOpen, Download } from 'lucide-react';
 import DarkMessiahFileBrowser from '../../components/darkmessiah/DarkMessiahFileBrowser';
 import DarkMessiahEditor from '../../components/darkmessiah/DarkMessiahEditor';
 import PatchManager from '../../components/darkmessiah/PatchManager';
+import GamePathSection from '../../components/darkmessiah/GamePathSection';
 import GlossaryEditor from '../../components/GlossaryEditor';
-import ModelSelector from '../../components/ModelSelector';
+import AppHeader, { HeaderButton } from '../../components/shared/AppHeader';
+import SettingsPage from '../../components/shared/SettingsPage';
+import AiSettingsSection from '../../components/shared/AiSettingsSection';
+import { useAiSettings } from '../../hooks/useAiSettings';
+import { useGamePath } from '../../utils/darkmessiah/useGamePath';
 import { resolveResourceDir, loadManifest, computeStats, collectPatchFiles } from '../../utils/darkmessiah/workspace';
 import { saveHandle, loadHandle } from '../../utils/darkmessiah/handleStore';
 import { initGlossarySystem, saveGlossary, deleteGlossary } from '../../utils/glossaryManager';
@@ -30,13 +35,10 @@ export default function DarkMessiahTranslator() {
   const [dirty, setDirty] = useState(false);
   const [viewMode, setViewMode] = useState('patch'); // patch | editor | glossary
 
-  // Gemini (API key / models shared with the other games, prompt is per game)
-  const [apiKey, setApiKey] = useState(localStorage.getItem('geminiApiKey') || '');
-  const [prompt, setPrompt] = useState(localStorage.getItem('dmGeminiPrompt') || DEFAULT_PROMPT);
-  const defaultModels = ['gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.6-pro'];
-  const savedModels = localStorage.getItem('geminiCustomModels');
-  const [models, setModels] = useState(savedModels ? JSON.parse(savedModels) : defaultModels);
-  const [model, setModel] = useState(localStorage.getItem('geminiModel') || models[0] || 'gemini-3.7-flash');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const ai = useAiSettings({ promptKey: 'dmGeminiPrompt', defaultPrompt: DEFAULT_PROMPT });
+  const { apiKey, prompt, model, models } = ai;
+  const game = useGamePath();
 
   const [glossariesMap, setGlossariesMap] = useState({});
   const [activeGlossaryName, setActiveGlossaryName] = useState('Ana_Sozluk');
@@ -99,12 +101,15 @@ export default function DarkMessiahTranslator() {
   };
 
   const switchView = (mode) => {
+    setSettingsOpen(false);
+    if (mode === viewMode) return;
     if (mode !== 'editor' && viewMode === 'editor' && !confirmDiscard()) return;
     if (mode !== 'editor') setDirty(false);
     setViewMode(mode);
   };
 
   const handleSelectFile = (f) => {
+    setSettingsOpen(false);
     if (f.id === selectedFile?.id && viewMode === 'editor') return;
     if (viewMode === 'editor' && !confirmDiscard()) return;
     setDirty(false);
@@ -168,76 +173,21 @@ export default function DarkMessiahTranslator() {
     return [...byKey.values()];
   }, [glossariesMap]);
 
-  const headerBtn = (mode, Icon, label) => (
-    <button
-      onClick={() => switchView(viewMode === mode ? (selectedFile ? 'editor' : 'patch') : mode)}
-      disabled={mode === 'glossary' && !rootHandle}
-      className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 text-sm font-medium transition-colors disabled:opacity-40 ${viewMode === mode ? 'bg-red-700 text-white' : 'text-gray-300 hover:text-white hover:bg-gray-800'}`}
-    >
-      <Icon size={17} />
-      <span className="hidden sm:inline">{label}</span>
-    </button>
-  );
+  // Header toggles: clicking the active view goes back to the file being edited (or the patch panel).
+  const toggleView = (mode) => switchView(viewMode === mode && !settingsOpen ? (selectedFile ? 'editor' : 'patch') : mode);
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 font-sans overflow-hidden">
-      <header className="h-12 bg-gray-900 border-b border-gray-800 flex items-center px-4 justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <button onClick={() => confirmDiscard() && navigate('/')} className="text-gray-400 hover:text-white" title="Ana Menüye Dön">
-            <ArrowLeft size={20} />
-          </button>
-          <div className="h-4 w-px bg-gray-700" />
-          <h1 className="text-white font-bold text-sm tracking-wide">DARK MESSIAH OF MIGHT &amp; MAGIC · TÜRKÇE YAMA</h1>
-        </div>
-        <div className="flex items-center gap-1">
-          {headerBtn('patch', Download, 'Yama')}
-          {headerBtn('glossary', BookOpen, `Sözlük (${flatGlossary.length})`)}
-        </div>
-      </header>
-
-      {/* AI settings bar (same fields as the S.T.A.L.K.E.R. translator): model, system prompt, API key */}
-      <div className="bg-white border-b border-gray-200 shadow-sm px-4 py-2.5 flex gap-3 items-end flex-wrap shrink-0">
-        <ModelSelector
-          selectedModel={model}
-          onSelectModel={(m) => { setModel(m); localStorage.setItem('geminiModel', m); }}
-          models={models}
-          setModels={(m) => { setModels(m); localStorage.setItem('geminiCustomModels', JSON.stringify(m)); }}
-        />
-        <div className="flex-1 min-w-[260px]">
-          <label className="flex items-center gap-2 text-xs font-semibold text-gray-500 mb-1">
-            System Prompt
-            <span className="font-normal text-gray-400">(tuş kodu / \n koruma kuralları otomatik eklenir)</span>
-            {prompt !== DEFAULT_PROMPT && (
-              <button
-                type="button"
-                onClick={() => { setPrompt(DEFAULT_PROMPT); localStorage.setItem('dmGeminiPrompt', DEFAULT_PROMPT); }}
-                className="ml-auto flex items-center gap-1 text-red-700 hover:underline font-normal"
-                title="Dark Messiah için hazırlanan varsayılan komuta dön"
-              >
-                <RotateCcw size={11} /> Varsayılan
-              </button>
-            )}
-          </label>
-          <input
-            type="text"
-            value={prompt}
-            onChange={(e) => { setPrompt(e.target.value); localStorage.setItem('dmGeminiPrompt', e.target.value); }}
-            title={prompt}
-            className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-2 focus:ring-red-500 outline-none"
-            placeholder="Örn. Translate to Turkish..."
-          />
-        </div>
-        <div className="w-56">
-          <label className="block text-xs font-semibold text-gray-500 mb-1 flex items-center gap-1"><Key size={12} /> Gemini API Key</label>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => { setApiKey(e.target.value); localStorage.setItem('geminiApiKey', e.target.value); }}
-            className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-2 focus:ring-red-500 outline-none"
-            placeholder="AIzaSy..."
-          />
-        </div>
-      </div>
+      <AppHeader
+        title="DARK MESSIAH OF MIGHT & MAGIC · TÜRKÇE YAMA"
+        accent="red"
+        onBack={() => confirmDiscard() && navigate('/')}
+        settingsOpen={settingsOpen}
+        onToggleSettings={() => setSettingsOpen((o) => !o)}
+      >
+        <HeaderButton icon={Download} label="Yama" accent="red" active={viewMode === 'patch' && !settingsOpen} onClick={() => toggleView('patch')} />
+        <HeaderButton icon={BookOpen} label={`Sözlük (${flatGlossary.length})`} accent="red" active={viewMode === 'glossary' && !settingsOpen} disabled={!rootHandle} onClick={() => toggleView('glossary')} />
+      </AppHeader>
 
       <div className="flex flex-1 min-h-0">
         <DarkMessiahFileBrowser
@@ -247,11 +197,21 @@ export default function DarkMessiahTranslator() {
           onSelectFile={handleSelectFile}
           onSelectDirectory={handleSelectDirectory}
           onOpenPatch={() => switchView('patch')}
-          patchActive={viewMode === 'patch'}
+          patchActive={viewMode === 'patch' && !settingsOpen}
           workspaceLabel={resource?.label}
         />
 
-        <main className="flex-1 flex flex-col min-w-0 bg-white">
+        <main className="flex-1 flex flex-col min-w-0 bg-white relative">
+          {settingsOpen && (
+            <SettingsPage gameName="Dark Messiah of Might & Magic" accent="red" onClose={() => setSettingsOpen(false)}>
+              <AiSettingsSection
+                ai={ai}
+                accent="red"
+                promptHint="Tuş kodlarını (%+use%), \n satır sonlarını ve <...> ses açıklamalarını koruma kuralları bu komutun sonuna otomatik eklenir."
+              />
+              <GamePathSection game={game} />
+            </SettingsPage>
+          )}
           {savedHandle && !rootHandle && (
             <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-sm text-amber-900 flex items-center gap-3">
               <FolderOpen size={16} />
@@ -289,6 +249,8 @@ export default function DarkMessiahTranslator() {
             <PatchManager
               hasWorkspace={!!resource}
               progress={progress}
+              game={game}
+              onOpenSettings={() => setSettingsOpen(true)}
               collectPatch={() => collectPatchFiles(resource.resourceDir, files)}
             />
           )}

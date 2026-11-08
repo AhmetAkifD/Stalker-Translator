@@ -153,7 +153,7 @@ export default function DarkMessiahEditor({
   };
 
   const handleTranslateSingle = async (item) => {
-    if (!apiKey) return alert('Önce üst çubuktaki Gemini API Key alanına anahtarınızı girin.');
+    if (!apiKey) return alert('Önce sağ üstteki Ayarlar bölümünden Gemini API anahtarınızı girin.');
     setTranslatingId(item.id);
     let ok = false;
     for (const m of modelsToTry) {
@@ -193,7 +193,7 @@ export default function DarkMessiahEditor({
   // Like the S.T.A.L.K.E.R. editor, the whole selection goes in as few requests as possible.
   // Only very large files are split (by text size) so a single answer is never cut off.
   const handleBulkTranslate = async () => {
-    if (!apiKey) return alert('Önce üst çubuktaki Gemini API Key alanına anahtarınızı girin.');
+    if (!apiKey) return alert('Önce sağ üstteki Ayarlar bölümünden Gemini API anahtarınızı girin.');
     const todo = visible.filter((i) => !i.translation.trim());
     if (todo.length === 0) return alert('Bu görünümde çevrilmemiş satır yok.');
     const chunks = splitIntoChunks(todo);
@@ -308,7 +308,7 @@ export default function DarkMessiahEditor({
               <button
                 onClick={handleBulkTranslate}
                 disabled={!apiKey || items.length === 0}
-                title={apiKey ? 'Görünümdeki çevrilmemiş satırları çevir' : 'Üst çubuktan API anahtarı girin'}
+                title={apiKey ? 'Görünümdeki çevrilmemiş satırları çevir' : 'Sağ üstteki Ayarlar bölümünden API anahtarı girin'}
                 className="flex items-center gap-1.5 bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white px-3 py-1.5 rounded-md text-sm font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Zap size={16} className="text-yellow-200 fill-yellow-200" />
