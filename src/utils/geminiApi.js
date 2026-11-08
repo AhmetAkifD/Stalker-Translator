@@ -55,10 +55,37 @@ export async function checkTokenLimit(textsArray, apiKey, prompt, modelName = "g
   }
 }
 
+// The exact prompt translateKeyed sends (also used to count its tokens beforehand).
+function buildKeyedPrompt(entries, prompt, glossary = []) {
+  const payload = {};
+  for (const e of entries) payload[e.id] = e.text;
+  const glossaryPrompt = buildGlossaryPrompt(glossary, entries.map((e) => e.text));
+  return prompt + glossaryPrompt +
+    "\n\nYou are given a JSON object. Each key is a row ID and each value is the text to translate. " +
+    "Return a JSON object with exactly the same keys, each mapped to the translation of its own value. " +
+    "Translate every key; never merge, split, skip or rename keys. Return raw JSON only, no markdown.\n\nObject to translate:\n" +
+    JSON.stringify(payload);
+}
+
+// Input tokens one translateKeyed request would use (countTokens does not use generation quota).
+// Falls back to a rough 4-characters-per-token estimate if counting fails; `estimated` says which.
+export async function countKeyedTokens(entries, apiKey, prompt, modelName = "gemini-3.7-flash", glossary = []) {
+  const fullPrompt = buildKeyedPrompt(entries, prompt, glossary);
+  try {
+    const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({ model: modelName });
+    const { totalTokens } = await model.countTokens(fullPrompt);
+    return { tokens: totalTokens, estimated: false };
+  } catch (e) {
+    console.error("Token count error", e);
+    return { tokens: Math.ceil(fullPrompt.length / 4), estimated: true };
+  }
+}
+
 // Translates rows by ID instead of by position. `entries` is [{ id, text }]; the model gets
 // {"<id>": "<text>", ...} and must answer with the same keys. Returns a Map(id -> translation)
 // containing only the IDs that actually came back, so a skipped row stays missing instead of
-// shifting every following translation by one.
+// shifting every following translation by one. The Map's `usage` property holds the token usage
+// reported by the API ({ promptTokenCount, candidatesTokenCount, totalTokenCount }) when available.
 export async function translateKeyed(entries, apiKey, prompt, modelName = "gemini-3.7-flash", glossary = [], signal) {
   if (!apiKey) throw new Error("API Key is missing");
 
@@ -68,18 +95,13 @@ export async function translateKeyed(entries, apiKey, prompt, modelName = "gemin
     generationConfig: { responseMimeType: "application/json" },
   });
 
-  const payload = {};
-  for (const e of entries) payload[e.id] = e.text;
-  const glossaryPrompt = buildGlossaryPrompt(glossary, entries.map((e) => e.text));
-  const fullPrompt = prompt + glossaryPrompt +
-    "\n\nYou are given a JSON object. Each key is a row ID and each value is the text to translate. " +
-    "Return a JSON object with exactly the same keys, each mapped to the translation of its own value. " +
-    "Translate every key; never merge, split, skip or rename keys. Return raw JSON only, no markdown.\n\nObject to translate:\n" +
-    JSON.stringify(payload);
+  const fullPrompt = buildKeyedPrompt(entries, prompt, glossary);
 
   let parsed;
+  let usage = null;
   try {
     const result = await model.generateContent(fullPrompt, signal ? { signal } : undefined);
+    usage = result.response.usageMetadata || null;
     let responseText = (await result.response.text()).trim();
     if (responseText.startsWith("```")) {
       responseText = responseText.replace(/^```[a-zA-Z]*\n?/, "").replace(/\n?```$/, "");
@@ -98,6 +120,7 @@ export async function translateKeyed(entries, apiKey, prompt, modelName = "gemin
     const v = parsed[e.id];
     if (typeof v === "string" && v.trim() !== "") out.set(e.id, v);
   }
+  out.usage = usage;
   return out;
 }
 

@@ -1,8 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { translateText, translateKeyed } from '../../utils/geminiApi';
+import { translateText, translateKeyed, countKeyedTokens } from '../../utils/geminiApi';
 import { readEntries, writeEntries } from '../../utils/darkmessiah/workspace';
 import { checkFormatting, DM_FORMAT_RULES } from '../../utils/darkmessiah/valveLocalization';
-import { Save, Loader2, Zap, Copy, Check, BookOpen, Search, AlertTriangle, ChevronLeft, ChevronRight, Square } from 'lucide-react';
+import { Save, Loader2, Zap, Copy, Check, BookOpen, Search, AlertTriangle, ChevronLeft, ChevronRight, Square, Calculator } from 'lucide-react';
+
+const fmt = (n) => Number(n || 0).toLocaleString('tr-TR');
+// Row IDs sent to the API are the row's position inside its request ("r0", "r1", ...).
+const toEntries = (chunk) => chunk.map((b, k) => ({ id: 'r' + k, text: b.original }));
 
 const PAGE_SIZE = 50;
 // Source text per request. ~40k characters stays far below Gemini's output limit even after
@@ -56,6 +60,10 @@ export default function DarkMessiahEditor({
   const [copiedId, setCopiedId] = useState(null);
   const abortRef = useRef(false);
   const controllerRef = useRef(null);
+  // Token info: estimate before a bulk run (input tokens) and real usage reported after it.
+  const [tokenEstimate, setTokenEstimate] = useState(null); // { loading } | { tokens, requests, rows, estimated }
+  const [lastUsage, setLastUsage] = useState(null); // { input, output, total, requests }
+  const usageRef = useRef(null);
 
   const fullPrompt = prompt + DM_FORMAT_RULES;
   const modelsToTry = useMemo(() => {
@@ -125,6 +133,27 @@ export default function DarkMessiahEditor({
     });
   }, [items, filter, query, warnings]);
 
+  // Rows "Toplu Çevir" would send right now (untranslated, non-empty, in the current filter/search).
+  const todoRows = useMemo(() => visible.filter((i) => !i.translation.trim() && !isEmptyRow(i)), [visible]);
+
+  // An old estimate no longer matches once the rows, prompt, model or glossary change.
+  useEffect(() => { setTokenEstimate(null); }, [todoRows, fullPrompt, selectedModel, glossary]);
+
+  // Counts the input tokens of every request a bulk run would send (one per chunk).
+  const estimateTokens = async (rows) => {
+    const chunks = splitIntoChunks(rows);
+    setTokenEstimate({ loading: true });
+    const counts = await Promise.all(chunks.map((c) => countKeyedTokens(toEntries(c), apiKey, fullPrompt, selectedModel, glossary)));
+    const est = {
+      tokens: counts.reduce((s, c) => s + c.tokens, 0),
+      estimated: counts.some((c) => c.estimated),
+      requests: chunks.length,
+      rows: rows.length,
+    };
+    setTokenEstimate(est);
+    return est;
+  };
+
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
   const pageItems = visible.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
@@ -179,12 +208,19 @@ export default function DarkMessiahEditor({
   // 'split' when the JSON answer was cut off (too big), or null when every model failed / stop.
   const requestChunk = async (chunk) => {
     const canSplit = chunk.length > MIN_SPLIT;
-    const entries = chunk.map((b, k) => ({ id: 'r' + k, text: b.original }));
+    const entries = toEntries(chunk);
     for (const m of modelsToTry) {
       for (let attempt = 0; attempt < 2; attempt++) {
         if (abortRef.current) return null;
         try {
           const res = await translateKeyed(entries, apiKey, fullPrompt, m, glossary, controllerRef.current?.signal);
+          if (res.usage && usageRef.current) {
+            const u = usageRef.current;
+            u.input += res.usage.promptTokenCount || 0;
+            u.output += res.usage.candidatesTokenCount || 0;
+            u.total += res.usage.totalTokenCount || 0;
+            u.requests++;
+          }
           // A valid answer is returned even if some (or all) rows are missing: those rows are retried
           // on their own by the caller instead of being treated as an API failure.
           return new Map(chunk.flatMap((b, k) => (res.has('r' + k) ? [[b.id, res.get('r' + k)]] : [])));
@@ -202,11 +238,14 @@ export default function DarkMessiahEditor({
   // Only very large files are split (by text size) so a single answer is never cut off.
   const handleBulkTranslate = async () => {
     if (!apiKey) return alert('Önce sağ üstteki Ayarlar bölümünden Gemini API anahtarınızı girin.');
-    const todo = visible.filter((i) => !i.translation.trim() && !isEmptyRow(i));
+    const todo = todoRows;
     if (todo.length === 0) return alert('Bu görünümde çevrilmemiş satır yok.');
     const chunks = splitIntoChunks(todo);
-    if (!confirm(`${todo.length} çevrilmemiş satır yapay zekayla çevrilecek (${chunks.length} API isteği). Devam edilsin mi?`)) return;
+    // Reuse the estimate on screen when it is still valid (it is cleared whenever the rows change).
+    const est = tokenEstimate && !tokenEstimate.loading ? tokenEstimate : await estimateTokens(todo);
+    if (!confirm(`${todo.length} çevrilmemiş satır yapay zekayla çevrilecek (${chunks.length} API isteği).\nGönderilecek metin: ${est.estimated ? 'yaklaşık ' : ''}${fmt(est.tokens)} token (cevap tokenleri buna dahil değil).\n\nDevam edilsin mi?`)) return;
 
+    usageRef.current = { input: 0, output: 0, total: 0, requests: 0 };
     abortRef.current = false;
     controllerRef.current = new AbortController();
     let done = 0;
@@ -248,6 +287,8 @@ export default function DarkMessiahEditor({
     }
     controllerRef.current = null;
     setBulk(null);
+    if (usageRef.current?.requests) setLastUsage({ ...usageRef.current });
+    usageRef.current = null;
     if (failed) alert(`API hatası nedeniyle ${failed} satır çevrilemedi (kota veya bağlantı sorunu olabilir; ayrıntı tarayıcı konsolunda). Çevrilenler korunur, "Toplu Çevir" ile kalanlara devam edebilirsiniz.`);
     else if (skipped.length) alert(`Model ${skipped.length} satırı tekrar denemelere rağmen çevirmedi; bu satırlar boş bırakıldı ve diğer çevirileri etkilemedi:\n${skipped.slice(0, 10).map((b) => b.key.trim()).join(', ')}${skipped.length > 10 ? ', ...' : ''}`);
   };
@@ -302,6 +343,30 @@ export default function DarkMessiahEditor({
           </div>
 
           <div className="flex items-center gap-3">
+            {!bulk && todoRows.length > 0 && (
+              tokenEstimate?.loading ? (
+                <span className="flex items-center gap-1.5 text-xs text-gray-500 px-2">
+                  <Loader2 size={12} className="animate-spin" /> Hesaplanıyor
+                </span>
+              ) : tokenEstimate ? (
+                <button
+                  onClick={() => estimateTokens(todoRows)}
+                  title={`Toplu Çevir ile gönderilecek ${tokenEstimate.rows} satırın giriş tokeni (${tokenEstimate.requests} istek). Cevap tokenleri buna dahil değildir. Yeniden hesaplamak için tıklayın.`}
+                  className="text-xs px-2.5 py-1.5 rounded-md bg-gray-100 text-gray-700 font-medium hover:bg-gray-200"
+                >
+                  {tokenEstimate.estimated ? '≈' : '~'}{fmt(tokenEstimate.tokens)} token · {tokenEstimate.requests} istek
+                </button>
+              ) : (
+                <button
+                  onClick={() => estimateTokens(todoRows)}
+                  disabled={!apiKey}
+                  title={apiKey ? 'Toplu Çevir ile gönderilecek metnin token sayısını hesapla' : 'Sağ üstteki Ayarlar bölümünden API anahtarı girin'}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 disabled:opacity-50"
+                >
+                  <Calculator size={13} /> Token Hesapla
+                </button>
+              )
+            )}
             {bulk ? (
               <button
                 onClick={handleStop}
@@ -354,6 +419,14 @@ export default function DarkMessiahEditor({
           <div className="text-xs text-gray-500 ml-auto">
             İlerleme: <b className="text-gray-700">{translatedCount}/{translatable.length}</b> ({translatable.length ? Math.round((translatedCount / translatable.length) * 100) : 100}%)
             {items.length > translatable.length && <span className="text-gray-400"> · {items.length - translatable.length} boş satır</span>}
+            {lastUsage && (
+              <span
+                className="ml-2 pl-2 border-l border-gray-300"
+                title={`Son toplu çeviride API'nin bildirdiği gerçek kullanım (${lastUsage.requests} başarılı istek). Giriş: gönderilen metin, çıkış: gelen çeviri.`}
+              >
+                Son toplu çeviri: <b className="text-gray-700">{fmt(lastUsage.total)}</b> token ({fmt(lastUsage.input)} giriş + {fmt(lastUsage.output)} çıkış)
+              </span>
+            )}
           </div>
         </div>
       </div>
