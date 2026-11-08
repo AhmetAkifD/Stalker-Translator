@@ -11,6 +11,9 @@ const MAX_CHUNK_CHARS = 40000;
 const MAX_CHUNK_ITEMS = 1500;
 const MIN_SPLIT = 20;
 
+// Some game rows have an empty (or whitespace-only) English text, e.g. "Arantir_striking0" "".
+const isEmptyRow = (item) => !item.original.trim();
+
 function splitIntoChunks(list) {
   const chunks = [];
   let current = [];
@@ -106,12 +109,15 @@ export default function DarkMessiahEditor({
     return m;
   }, [items]);
 
-  const translatedCount = items.filter((i) => i.translation.trim()).length;
+  // Rows whose English text is empty have nothing to translate: they are never sent to the AI
+  // and are left out of the progress counts (the game shows them empty either way).
+  const translatable = items.filter((i) => !isEmptyRow(i));
+  const translatedCount = translatable.filter((i) => i.translation.trim()).length;
 
   const visible = useMemo(() => {
     const q = query.trim().toLocaleLowerCase('tr');
     return items.filter((it) => {
-      if (filter === 'untranslated' && it.translation.trim()) return false;
+      if (filter === 'untranslated' && (it.translation.trim() || isEmptyRow(it))) return false;
       if (filter === 'translated' && !it.translation.trim()) return false;
       if (filter === 'warnings' && !warnings.has(it.id)) return false;
       if (!q) return true;
@@ -144,7 +150,8 @@ export default function DarkMessiahEditor({
       await writeEntries(resourceDir, file.turkishSegs, entries);
       setDirty(false);
       setSaveStatus('Kaydedildi');
-      onSaved({ total: items.length, translated: items.filter((i) => i.translation.trim()).length });
+      const nonEmpty = items.filter((i) => !isEmptyRow(i));
+      onSaved({ total: nonEmpty.length, translated: nonEmpty.filter((i) => i.translation.trim()).length });
       setTimeout(() => setSaveStatus((s) => (s === 'Kaydedildi' ? '' : s)), 3000);
     } catch (err) {
       console.error(err);
@@ -153,6 +160,7 @@ export default function DarkMessiahEditor({
   };
 
   const handleTranslateSingle = async (item) => {
+    if (isEmptyRow(item)) return;
     if (!apiKey) return alert('Önce sağ üstteki Ayarlar bölümünden Gemini API anahtarınızı girin.');
     setTranslatingId(item.id);
     let ok = false;
@@ -194,7 +202,7 @@ export default function DarkMessiahEditor({
   // Only very large files are split (by text size) so a single answer is never cut off.
   const handleBulkTranslate = async () => {
     if (!apiKey) return alert('Önce sağ üstteki Ayarlar bölümünden Gemini API anahtarınızı girin.');
-    const todo = visible.filter((i) => !i.translation.trim());
+    const todo = visible.filter((i) => !i.translation.trim() && !isEmptyRow(i));
     if (todo.length === 0) return alert('Bu görünümde çevrilmemiş satır yok.');
     const chunks = splitIntoChunks(todo);
     if (!confirm(`${todo.length} çevrilmemiş satır yapay zekayla çevrilecek (${chunks.length} API isteği). Devam edilsin mi?`)) return;
@@ -330,7 +338,7 @@ export default function DarkMessiahEditor({
         <div className="flex items-center gap-3 px-3 pb-3 flex-wrap">
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
             {filterBtn('all', 'Tümü', items.length)}
-            {filterBtn('untranslated', 'Çevrilmemiş', items.length - translatedCount)}
+            {filterBtn('untranslated', 'Çevrilmemiş', translatable.length - translatedCount)}
             {filterBtn('translated', 'Çevrilmiş', translatedCount)}
             {filterBtn('warnings', 'Uyarılı', warnings.size)}
           </div>
@@ -344,7 +352,8 @@ export default function DarkMessiahEditor({
             />
           </div>
           <div className="text-xs text-gray-500 ml-auto">
-            İlerleme: <b className="text-gray-700">{translatedCount}/{items.length}</b> ({items.length ? Math.round((translatedCount / items.length) * 100) : 0}%)
+            İlerleme: <b className="text-gray-700">{translatedCount}/{translatable.length}</b> ({translatable.length ? Math.round((translatedCount / translatable.length) * 100) : 100}%)
+            {items.length > translatable.length && <span className="text-gray-400"> · {items.length - translatable.length} boş satır</span>}
           </div>
         </div>
       </div>
@@ -367,14 +376,16 @@ export default function DarkMessiahEditor({
                         {copiedId === item.id ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
                       </button>
                     </div>
-                    <p className="text-gray-800 whitespace-pre-wrap break-words leading-relaxed">{item.original}</p>
+                    {isEmptyRow(item)
+                      ? <p className="text-gray-400 italic">(İngilizce metin boş — çevrilecek bir şey yok)</p>
+                      : <p className="text-gray-800 whitespace-pre-wrap break-words leading-relaxed">{item.original}</p>}
                   </div>
                   <div className="w-1/2 p-4 min-w-0">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[11px] font-bold text-red-700 uppercase tracking-wider">Türkçe</span>
                       <button
                         onClick={() => handleTranslateSingle(item)}
-                        disabled={translatingId === item.id || !!bulk || !apiKey}
+                        disabled={translatingId === item.id || !!bulk || !apiKey || isEmptyRow(item)}
                         className="text-xs bg-red-50 hover:bg-red-100 text-red-700 px-3 py-1 rounded-full font-semibold flex items-center gap-1 disabled:opacity-50"
                       >
                         {translatingId === item.id ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} className="fill-red-600" />}

@@ -136,7 +136,11 @@ export default function Editor({
 
     // Every row is sent with its own ID ("r0", "r1", ...) and answers are matched by ID, not by position.
     // If the model skips a row, only that row stays untranslated; the next attempt re-sends just the missing rows.
-    let pending = items.map((item, i) => ({ id: 'r' + i, index: i, text: item.originalText }));
+    // Rows with an empty original text have nothing to translate and are never sent
+    // (an empty answer would otherwise look like a skipped row and be re-requested).
+    let pending = items
+      .map((item, i) => ({ id: 'r' + i, index: i, text: item.originalText || '' }))
+      .filter(p => p.text.trim() !== '');
     let translatedCount = 0;
 
     // Start fallback from the selected model and move down the priority list
@@ -188,6 +192,7 @@ export default function Editor({
   };
 
   const handleTranslate = async (index, item) => {
+    if (!(item.originalText || '').trim()) return;
     if (!apiKey) {
       alert("Please enter your Gemini API Key first.");
       return;
