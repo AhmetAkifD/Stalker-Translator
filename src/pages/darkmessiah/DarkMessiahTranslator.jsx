@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, FolderOpen, Download } from 'lucide-react';
+import { BookOpen, Download } from 'lucide-react';
 import DarkMessiahFileBrowser from '../../components/darkmessiah/DarkMessiahFileBrowser';
 import DarkMessiahEditor from '../../components/darkmessiah/DarkMessiahEditor';
 import PatchManager from '../../components/darkmessiah/PatchManager';
@@ -12,7 +12,8 @@ import AiSettingsSection from '../../components/shared/AiSettingsSection';
 import { useAiSettings } from '../../hooks/useAiSettings';
 import { useGamePath } from '../../utils/darkmessiah/useGamePath';
 import { resolveResourceDir, loadManifest, computeStats, collectPatchFiles } from '../../utils/darkmessiah/workspace';
-import { saveHandle, loadHandle } from '../../utils/darkmessiah/handleStore';
+import { useRememberedFolder } from '../../hooks/useRememberedFolder';
+import ReopenFolderBanner from '../../components/shared/ReopenFolderBanner';
 import { initGlossarySystem, saveGlossary, deleteGlossary } from '../../utils/glossaryManager';
 
 const HANDLE_KEY = 'darkmessiah-workspace';
@@ -27,7 +28,6 @@ const DM_GLOSSARY_SEED = [
 export default function DarkMessiahTranslator() {
   const navigate = useNavigate();
   const [rootHandle, setRootHandle] = useState(null);
-  const [savedHandle, setSavedHandle] = useState(null);
   const [resource, setResource] = useState(null); // { resourceDir, label }
   const [files, setFiles] = useState([]);
   const [stats, setStats] = useState({});
@@ -47,13 +47,12 @@ export default function DarkMessiahTranslator() {
     const res = await resolveResourceDir(handle);
     if (!res) {
       alert('Bu klasörde "mm/resource/english" ve "mm_itemnames_english.txt" bulunamadı. Lütfen çıkarılmış VPK klasörünü (ör. "vpk unpacked") seçin.');
-      return;
+      return false;
     }
     setRootHandle(handle);
     setResource(res);
     setSelectedFile(null);
     setViewMode('patch');
-    await saveHandle(HANDLE_KEY, handle);
 
     const manifest = await loadManifest(res.resourceDir);
     setFiles(manifest);
@@ -65,16 +64,10 @@ export default function DarkMessiahTranslator() {
     const glossaries = await initGlossarySystem(handle, DM_GLOSSARY_SEED);
     setGlossariesMap(glossaries);
     setActiveGlossaryName(glossaries['Ana_Sozluk'] ? 'Ana_Sozluk' : Object.keys(glossaries)[0] || '');
+    return true;
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      const h = await loadHandle(HANDLE_KEY);
-      if (!h) return;
-      if ((await h.queryPermission?.({ mode: 'readwrite' })) === 'granted') await openWorkspace(h);
-      else setSavedHandle(h);
-    })();
-  }, [openWorkspace]);
+  const folder = useRememberedFolder(HANDLE_KEY, openWorkspace);
 
   const confirmDiscard = () => !dirty || confirm('Kaydedilmemiş değişiklikler kaybolacak. Devam edilsin mi?');
 
@@ -83,20 +76,9 @@ export default function DarkMessiahTranslator() {
     try {
       const handle = await window.showDirectoryPicker({ id: 'darkmessiah', mode: 'readwrite' });
       setDirty(false);
-      await openWorkspace(handle);
+      if (await openWorkspace(handle)) await folder.remember(handle);
     } catch (err) {
       if (err.name !== 'AbortError') alert('Klasör açılamadı: ' + err.message);
-    }
-  };
-
-  const handleReopenSaved = async () => {
-    try {
-      if ((await savedHandle.requestPermission({ mode: 'readwrite' })) === 'granted') {
-        setSavedHandle(null);
-        await openWorkspace(savedHandle);
-      }
-    } catch (err) {
-      alert('Klasör açılamadı: ' + err.message);
     }
   };
 
@@ -212,13 +194,7 @@ export default function DarkMessiahTranslator() {
               <GamePathSection game={game} />
             </SettingsPage>
           )}
-          {savedHandle && !rootHandle && (
-            <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-sm text-amber-900 flex items-center gap-3">
-              <FolderOpen size={16} />
-              Son çalışma klasörü: <b>{savedHandle.name}</b>
-              <button onClick={handleReopenSaved} className="ml-auto px-3 py-1 rounded-md bg-amber-600 hover:bg-amber-700 text-white font-semibold">Aç</button>
-            </div>
-          )}
+          <ReopenFolderBanner folder={folder} />
 
           {viewMode === 'glossary' && rootHandle ? (
             <GlossaryEditor

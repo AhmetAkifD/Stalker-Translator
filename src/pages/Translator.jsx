@@ -9,6 +9,8 @@ import AppHeader, { HeaderButton } from '../components/shared/AppHeader'
 import SettingsPage from '../components/shared/SettingsPage'
 import AiSettingsSection from '../components/shared/AiSettingsSection'
 import { useAiSettings } from '../hooks/useAiSettings'
+import { useRememberedFolder } from '../hooks/useRememberedFolder'
+import ReopenFolderBanner from '../components/shared/ReopenFolderBanner'
 import { BookOpen } from 'lucide-react'
 
 const STALKER_DEFAULT_PROMPT = 'Translate this game dialogue to Turkish. Just return the translation without any markdown or quotes.'
@@ -43,11 +45,15 @@ export default function Translator({ initialMode = 'editor' }) {
   const [isResizing, setIsResizing] = useState(false)
   const navigate = useNavigate();
 
-  const handleSelectDirectory = async () => {
+  const revalidateFiles = async () => {
+    return new Set();
+  };
+
+  // Opens a working folder (picked now or remembered from the last visit).
+  const openDirectory = async (dirHandle) => {
     try {
-      const dirHandle = await window.showDirectoryPicker()
       setDirectoryHandle(dirHandle)
-      
+
       const origFiles = []
       const transFiles = []
       const bckFiles = []
@@ -101,6 +107,18 @@ export default function Translator({ initialMode = 'editor' }) {
       await revalidateFiles(sortedOrig, sortedTrans, sortedBck);
     } catch (error) {
       console.error(error);
+    }
+  }
+
+  const folder = useRememberedFolder('stalker-workspace', openDirectory)
+
+  const handleSelectDirectory = async () => {
+    try {
+      const dirHandle = await window.showDirectoryPicker({ id: 'stalker', mode: 'readwrite' })
+      await openDirectory(dirHandle)
+      await folder.remember(dirHandle)
+    } catch (error) {
+      if (error.name !== 'AbortError') console.error(error)
     }
   }
 
@@ -180,9 +198,6 @@ export default function Translator({ initialMode = 'editor' }) {
     }
   }
 
-  const revalidateFiles = async () => {
-    return new Set();
-  };
 
   const handleFixBrokenFiles = async () => {
     // Disabled
@@ -226,12 +241,16 @@ export default function Translator({ initialMode = 'editor' }) {
           icon={BookOpen}
           label={`Sözlük (${flatGlossary.length})`}
           accent="blue"
+          disabled={!directoryHandle}
+          title={directoryHandle ? undefined : 'Önce bir klasör seçin'}
           active={viewMode === 'glossary' && !settingsOpen}
           onClick={() => { setSettingsOpen(false); setViewMode(viewMode === 'glossary' ? 'editor' : 'glossary'); }}
         />
       </AppHeader>
 
       {/* Main Content */}
+      <ReopenFolderBanner folder={folder} />
+
       <main className="flex-1 flex overflow-hidden">
         <FileBrowser 
           originalFiles={originalFiles} 
@@ -243,8 +262,6 @@ export default function Translator({ initialMode = 'editor' }) {
           onViewModeChange={(mode) => { setSettingsOpen(false); setViewMode(mode); }}
           onFixBrokenFiles={handleFixBrokenFiles}
           isFixing={isFixing}
-          hasDirectory={!!directoryHandle}
-          glossaryCount={flatGlossary.length}
           onSelectFile={(f, category = "original") => {
             setSettingsOpen(false);
             setSelectedFile(f);
