@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Bot, Key, Eye, EyeOff, RotateCcw } from 'lucide-react';
+import { Bot, RotateCcw } from 'lucide-react';
 import ModelSelector from '../ModelSelector';
+import ApiKeyList from './ApiKeyList';
 import { SettingsSection } from './SettingsPage';
 import { accentOf } from './theme';
 
@@ -8,45 +8,23 @@ import { accentOf } from './theme';
 // `ai` is the object returned by useAiSettings(); `promptHint` is an optional game-specific note.
 export default function AiSettingsSection({ ai, accent = 'blue', promptHint }) {
   const a = accentOf(accent);
-  const [showKey, setShowKey] = useState(false);
 
   return (
     <SettingsSection
       icon={Bot}
       accent={accent}
       title="Yapay Zeka"
-      description="API anahtarı ve model listesi tüm oyunlarda ortaktır; çeviri komutu bu oyuna özeldir."
+      description="API anahtarları ve model listesi tüm oyunlarda ortaktır; çeviri komutu bu oyuna özeldir."
     >
       <div className="space-y-5">
         <div className="flex flex-wrap gap-4 items-end">
           <ModelSelector selectedModel={ai.model} onSelectModel={ai.setModel} models={ai.models} setModels={ai.setModels} />
           <p className="text-xs text-gray-500 flex-1 min-w-[200px] pb-1.5">
-            Toplu çeviride seçili model başarısız olursa listede altındaki modeller sırayla denenir. Sırayı ok tuşlarıyla değiştirebilirsiniz.
+            Seçili model başarısız olursa listede altındaki modeller sırayla denenir; hepsi başarısız olursa sıradaki API anahtarına geçilir. Sırayı ok tuşlarıyla değiştirebilirsiniz.
           </p>
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-gray-500 mb-1 flex items-center gap-1"><Key size={12} /> Gemini API Key</label>
-          <div className="flex gap-2">
-            <input
-              type={showKey ? 'text' : 'password'}
-              value={ai.apiKey}
-              onChange={(e) => ai.setApiKey(e.target.value)}
-              placeholder="AIzaSy..."
-              autoComplete="off"
-              className={`flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:ring-2 ${a.ring} outline-none`}
-            />
-            <button
-              type="button"
-              onClick={() => setShowKey((s) => !s)}
-              className="px-3 rounded-md border border-gray-300 text-gray-500 hover:bg-gray-100"
-              title={showKey ? 'Gizle' : 'Göster'}
-            >
-              {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-          </div>
-          {!ai.apiKey && <p className="text-xs text-amber-700 mt-1">API anahtarı girilmeden yapay zeka çevirisi yapılamaz.</p>}
-        </div>
+        <ApiKeyList keys={ai.apiKeys} setKeys={ai.setApiKeys} accent={accent} />
 
         <div>
           <div className="flex items-center gap-2 mb-1">

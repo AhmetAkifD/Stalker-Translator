@@ -213,6 +213,7 @@ export default function DarkMessiahTranslator() {
               file={selectedFile}
               resourceDir={resource.resourceDir}
               apiKey={apiKey}
+              apiKeys={ai.apiKeys}
               prompt={prompt}
               selectedModel={model}
               fallbackModels={models}

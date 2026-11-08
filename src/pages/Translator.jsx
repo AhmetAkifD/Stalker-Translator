@@ -290,6 +290,7 @@ export default function Translator({ initialMode = 'editor' }) {
             fileCategory={fileCategory}
             directoryHandle={directoryHandle}
             apiKey={apiKey}
+            apiKeys={ai.apiKeys}
             prompt={prompt}
             selectedModel={model}
             targetItemId={targetItemId}

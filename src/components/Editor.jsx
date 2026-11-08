@@ -3,6 +3,7 @@ import { translateText, translateKeyed, checkTokenLimit } from '../utils/geminiA
 import { replaceTurkishCharacters } from '../utils/turkishReplacer';
 import { extractTranslations, applyTranslations, hasStringTable, hasXmlDeclaration, removeXmlDeclaration, removeStringTableTags } from '../utils/xmlUtils';
 import { readXmlFile, saveFileToFolder } from '../utils/fileSystem';
+import { createFallbackRunner } from '../utils/aiFallback';
 import { Save, Loader2, ArrowRight, ArrowDown, Zap, Calculator, Copy, Check, AlertTriangle, Eye, Wrench, BookOpen, XCircle, Trash2 } from 'lucide-react';
 
 export default function Editor({ 
@@ -10,6 +11,7 @@ export default function Editor({
   fileCategory = "original",
   directoryHandle, 
   apiKey, 
+  apiKeys = [],
   prompt, 
   selectedModel, 
   fallbackModels = [],
@@ -143,28 +145,21 @@ export default function Editor({
       .filter(p => p.text.trim() !== '');
     let translatedCount = 0;
 
-    // Start fallback from the selected model and move down the priority list
-    const startIndex = fallbackModels ? fallbackModels.indexOf(selectedModel) : -1;
-    const modelsToTry = fallbackModels && fallbackModels.length > 0
-      ? fallbackModels.slice(startIndex >= 0 ? startIndex : 0)
-      : [selectedModel];
+    // Fallback: for each API key (in list order) the models from the selected one downwards, 2 tries each.
+    // The runner remembers its place, so a re-send of missing rows starts at the key/model that last worked.
+    const runner = createFallbackRunner({
+      apiKeys: apiKeys.length ? apiKeys : [apiKey],
+      models: fallbackModels,
+      selectedModel,
+    });
 
-    // One request: tries each model up to 2 times (errors, quota...) until one gives a valid answer.
+    // One request: walks the key/model list until one gives a valid answer.
     const requestOnce = async (rows) => {
-      for (const modelToTry of modelsToTry) {
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          if (abortRef.current) return null;
-          console.log(`Trying model: ${modelToTry}, Attempt: ${attempt}, rows: ${rows.length}`);
-          try {
-            return await translateKeyed(rows, apiKey, prompt, modelToTry, glossary);
-          } catch (error) {
-            console.error(`Error with ${modelToTry} (Attempt ${attempt}):`, error);
-            if (attempt === 1) await new Promise(resolve => setTimeout(resolve, 1000));
-          }
-        }
-        console.log(`${modelToTry} failed twice. Moving to next model if available.`);
-      }
-      return null;
+      const r = await runner.run(
+        (key, model) => translateKeyed(rows, key, prompt, model, glossary),
+        { shouldStop: () => abortRef.current },
+      );
+      return r.ok ? r.value : null;
     };
 
     // First round sends every row; up to 2 more rounds re-send only the rows the model skipped.
@@ -184,7 +179,7 @@ export default function Editor({
 
     if (abortRef.current) return;
     if (apiFailed && translatedCount === 0) {
-       alert("Bulk translation failed after trying all available models. Please check your API key, quotas, or try again later.");
+       alert("Bulk translation failed after trying every API key and model. Please check your API keys, quotas, or try again later.");
     } else if (pending.length > 0) {
        const ids = pending.slice(0, 10).map(p => items[p.index].id).join(', ');
        alert(`${translatedCount} rows translated. ${pending.length} row(s) could not be translated and kept their previous text: ${ids}${pending.length > 10 ? ', ...' : ''}`);
@@ -199,17 +194,16 @@ export default function Editor({
     }
     
     setTranslatingId(item.id);
-    try {
-      const rawTranslation = await translateText(item.originalText, apiKey, prompt, selectedModel, glossary);
-      
+    const r = await createFallbackRunner({ apiKeys: apiKeys.length ? apiKeys : [apiKey], models: fallbackModels, selectedModel })
+      .run((key, model) => translateText(item.originalText, key, prompt, model, glossary));
+    if (r.ok) {
       const newItems = [...items];
-      newItems[index].translatedText = rawTranslation;
+      newItems[index].translatedText = r.value;
       setItems(newItems);
-    } catch (error) {
-      alert("Translation failed: " + error.message);
-    } finally {
-      setTranslatingId(null);
+    } else {
+      alert("Translation failed with every API key and model (details in the browser console).");
     }
+    setTranslatingId(null);
   };
 
   const handleManualEdit = (index, value) => {

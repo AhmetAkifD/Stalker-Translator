@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { translateText, translateKeyed, countKeyedTokens } from '../../utils/geminiApi';
 import { readEntries, writeEntries } from '../../utils/darkmessiah/workspace';
 import { checkFormatting, DM_FORMAT_RULES } from '../../utils/darkmessiah/valveLocalization';
+import { createFallbackRunner } from '../../utils/aiFallback';
 import { Save, Loader2, Zap, Copy, Check, BookOpen, Search, AlertTriangle, ChevronLeft, ChevronRight, Square, Calculator } from 'lucide-react';
 
 const fmt = (n) => Number(n || 0).toLocaleString('tr-TR');
@@ -40,6 +41,7 @@ export default function DarkMessiahEditor({
   file,
   resourceDir,
   apiKey,
+  apiKeys = [],
   prompt,
   selectedModel,
   fallbackModels = [],
@@ -66,10 +68,8 @@ export default function DarkMessiahEditor({
   const usageRef = useRef(null);
 
   const fullPrompt = prompt + DM_FORMAT_RULES;
-  const modelsToTry = useMemo(() => {
-    const start = fallbackModels.indexOf(selectedModel);
-    return fallbackModels.length ? fallbackModels.slice(start >= 0 ? start : 0) : [selectedModel];
-  }, [fallbackModels, selectedModel]);
+  const keys = apiKeys.length ? apiKeys : [apiKey];
+  const newRunner = (onSwitch) => createFallbackRunner({ apiKeys: keys, models: fallbackModels, selectedModel, onSwitch });
 
   useEffect(() => {
     let cancelled = false;
@@ -192,46 +192,44 @@ export default function DarkMessiahEditor({
     if (isEmptyRow(item)) return;
     if (!apiKey) return alert('Önce sağ üstteki Ayarlar bölümünden Gemini API anahtarınızı girin.');
     setTranslatingId(item.id);
-    let ok = false;
-    for (const m of modelsToTry) {
-      try {
-        const t = await translateText(item.original, apiKey, fullPrompt, m, glossary);
-        if (t) { updateTranslations(new Map([[item.id, t]])); ok = true; break; }
-      } catch (err) { console.error(err); }
-    }
-    if (!ok) alert('Çeviri tüm modellerde başarısız oldu.');
+    const res = await newRunner().run(async (key, m) => {
+      const t = await translateText(item.original, key, fullPrompt, m, glossary);
+      if (!t) throw new Error('Boş cevap');
+      return t;
+    });
+    if (res.ok) updateTranslations(new Map([[item.id, res.value]]));
+    else alert('Çeviri tüm API anahtarları ve modellerde başarısız oldu (ayrıntı tarayıcı konsolunda).');
     setTranslatingId(null);
   };
 
   // One request per chunk. Rows are sent with IDs and answers are matched by ID, so a skipped row
   // can never shift the others. Returns Map(itemId -> translation) with the rows that came back,
   // 'split' when the JSON answer was cut off (too big), or null when every model failed / stop.
-  const requestChunk = async (chunk) => {
+  // `runner` keeps its place between chunks: once a key is used up, later chunks start at the next key.
+  const requestChunk = async (chunk, runner) => {
     const canSplit = chunk.length > MIN_SPLIT;
     const entries = toEntries(chunk);
-    for (const m of modelsToTry) {
-      for (let attempt = 0; attempt < 2; attempt++) {
-        if (abortRef.current) return null;
-        try {
-          const res = await translateKeyed(entries, apiKey, fullPrompt, m, glossary, controllerRef.current?.signal);
-          if (res.usage && usageRef.current) {
-            const u = usageRef.current;
-            u.input += res.usage.promptTokenCount || 0;
-            u.output += res.usage.candidatesTokenCount || 0;
-            u.total += res.usage.totalTokenCount || 0;
-            u.requests++;
-          }
-          // A valid answer is returned even if some (or all) rows are missing: those rows are retried
-          // on their own by the caller instead of being treated as an API failure.
-          return new Map(chunk.flatMap((b, k) => (res.has('r' + k) ? [[b.id, res.get('r' + k)]] : [])));
-        } catch (err) {
-          if (abortRef.current) return null;
-          console.error(err);
-          if (canSplit && /JSON/i.test(err.message)) return 'split';
-        }
-      }
+    const r = await runner.run(
+      (key, m) => translateKeyed(entries, key, fullPrompt, m, glossary, controllerRef.current?.signal),
+      {
+        shouldStop: () => abortRef.current,
+        // A cut-off JSON answer means the request was too big, not that the key/model is broken.
+        onError: (err) => (canSplit && /JSON/i.test(err.message) ? 'abort' : undefined),
+      },
+    );
+    if (r.error) return 'split';
+    if (!r.ok) return null;
+    const res = r.value;
+    if (res.usage && usageRef.current) {
+      const u = usageRef.current;
+      u.input += res.usage.promptTokenCount || 0;
+      u.output += res.usage.candidatesTokenCount || 0;
+      u.total += res.usage.totalTokenCount || 0;
+      u.requests++;
     }
-    return null;
+    // A valid answer is returned even if some (or all) rows are missing: those rows are retried
+    // on their own by the caller instead of being treated as an API failure.
+    return new Map(chunk.flatMap((b, k) => (res.has('r' + k) ? [[b.id, res.get('r' + k)]] : [])));
   };
 
   // Like the S.T.A.L.K.E.R. editor, the whole selection goes in as few requests as possible.
@@ -253,14 +251,19 @@ export default function DarkMessiahEditor({
     let failed = 0;
     const skipped = [];
     const retries = new Map();
-    setBulk({ done, total: todo.length, requests });
+    let using = null; // shown on the stop button after a switch: "Anahtar 2 · model"
+    setBulk({ done, total: todo.length, requests, using });
+    const runner = newRunner((c) => {
+      using = `Anahtar ${c.keyIndex + 1} · ${c.model}`;
+      setBulk((b) => (b ? { ...b, using } : b));
+    });
 
     const queue = [...chunks];
     while (queue.length && !abortRef.current) {
       const chunk = queue.shift();
       requests++;
-      setBulk({ done, total: todo.length, requests });
-      const res = await requestChunk(chunk);
+      setBulk({ done, total: todo.length, requests, using });
+      const res = await requestChunk(chunk, runner);
       if (res === 'split') {
         // Answer was cut off: send the same rows again as two smaller requests.
         const mid = Math.ceil(chunk.length / 2);
@@ -279,17 +282,17 @@ export default function DarkMessiahEditor({
         }
         if (again.length) queue.unshift(again);
       } else if (!abortRef.current) {
-        // Every model failed (usually quota or network): stop instead of burning more requests.
+        // Every key and model failed (usually quota or network): stop instead of burning more requests.
         failed = todo.length - done;
         break;
       }
-      setBulk({ done, total: todo.length, requests });
+      setBulk({ done, total: todo.length, requests, using });
     }
     controllerRef.current = null;
     setBulk(null);
     if (usageRef.current?.requests) setLastUsage({ ...usageRef.current });
     usageRef.current = null;
-    if (failed) alert(`API hatası nedeniyle ${failed} satır çevrilemedi (kota veya bağlantı sorunu olabilir; ayrıntı tarayıcı konsolunda). Çevrilenler korunur, "Toplu Çevir" ile kalanlara devam edebilirsiniz.`);
+    if (failed) alert(`Tüm API anahtarları ve modeller hata verdiği için ${failed} satır çevrilemedi (kota veya bağlantı sorunu olabilir; ayrıntı tarayıcı konsolunda). Çevrilenler korunur, "Toplu Çevir" ile kalanlara devam edebilirsiniz.`);
     else if (skipped.length) alert(`Model ${skipped.length} satırı tekrar denemelere rağmen çevirmedi; bu satırlar boş bırakıldı ve diğer çevirileri etkilemedi:\n${skipped.slice(0, 10).map((b) => b.key.trim()).join(', ')}${skipped.length > 10 ? ', ...' : ''}`);
   };
 
@@ -370,11 +373,11 @@ export default function DarkMessiahEditor({
             {bulk ? (
               <button
                 onClick={handleStop}
-                title={`${bulk.requests}. API isteği bekleniyor`}
+                title={`${bulk.requests}. API isteği bekleniyor${bulk.using ? ` (şu an: ${bulk.using})` : ''}`}
                 className="flex items-center gap-1.5 bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1.5 rounded-md text-sm font-bold border border-red-200"
               >
                 <Loader2 size={16} className="animate-spin" />
-                {bulk.done}/{bulk.total} · İstek {bulk.requests} · Durdur
+                {bulk.done}/{bulk.total} · İstek {bulk.requests}{bulk.using ? ` · ${bulk.using}` : ''} · Durdur
                 <Square size={12} className="fill-red-700" />
               </button>
             ) : (
