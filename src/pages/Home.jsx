@@ -38,17 +38,6 @@ export default function Home() {
             </button>
             
             <button
-              onClick={() => handleGameSelect('witcher')}
-              className="w-full flex items-center justify-between p-4 rounded bg-gray-700/50 hover:bg-amber-600/30 border border-transparent hover:border-amber-500 transition-all text-left group mt-2"
-            >
-              <div className="flex flex-col">
-                <span className="font-semibold text-lg group-hover:text-amber-100 transition-colors">The Witcher 1</span>
-                <span className="text-xs text-gray-400 mt-1">TLG Localization Files</span>
-              </div>
-              <ChevronRight className="text-gray-500 group-hover:text-amber-400 transition-colors" />
-            </button>
-
-            <button
               onClick={() => handleGameSelect('darkmessiah')}
               className="w-full flex items-center justify-between p-4 rounded bg-gray-700/50 hover:bg-red-700/30 border border-transparent hover:border-red-500 transition-all text-left group mt-2"
             >
@@ -57,6 +46,17 @@ export default function Home() {
                 <span className="text-xs text-gray-400 mt-1">Source Localization Files · Tek Tıkla Kurulum</span>
               </div>
               <ChevronRight className="text-gray-500 group-hover:text-red-400 transition-colors" />
+            </button>
+
+            <button
+              onClick={() => handleGameSelect('metalgear')}
+              className="w-full flex items-center justify-between p-4 rounded bg-gray-700/50 hover:bg-emerald-700/30 border border-transparent hover:border-emerald-500 transition-all text-left group mt-2"
+            >
+              <div className="flex flex-col">
+                <span className="font-semibold text-lg group-hover:text-emerald-100 transition-colors">METAL GEAR &amp; METAL GEAR 2: Solid Snake</span>
+                <span className="text-xs text-gray-400 mt-1">Master Collection · .raw Metin Dosyaları · Tek Tıkla Kurulum</span>
+              </div>
+              <ChevronRight className="text-gray-500 group-hover:text-emerald-400 transition-colors" />
             </button>
 
             <button disabled className="w-full flex items-center justify-between p-4 rounded text-left opacity-50 cursor-not-allowed mt-2">
@@ -81,8 +81,8 @@ export default function Home() {
               <ChevronRight className="rotate-180" size={16} /> Back
             </button>
             <h1 className="text-3xl font-bold text-gray-100 mb-2">Select Tool</h1>
-            <p className={selectedGame === 'stalker' ? "text-blue-300" : selectedGame === 'darkmessiah' ? "text-red-300" : "text-amber-300"}>
-              {selectedGame === 'stalker' ? "S.T.A.L.K.E.R.: Shadow of Chernobyl" : selectedGame === 'darkmessiah' ? "Dark Messiah of Might & Magic" : "The Witcher 1"}
+            <p className={{ stalker: 'text-blue-300', darkmessiah: 'text-red-300', metalgear: 'text-emerald-300' }[selectedGame] || 'text-gray-300'}>
+              {{ stalker: 'S.T.A.L.K.E.R.: Shadow of Chernobyl', darkmessiah: 'Dark Messiah of Might & Magic', metalgear: 'METAL GEAR & METAL GEAR 2: Solid Snake' }[selectedGame] || ''}
             </p>
           </div>
           
@@ -128,7 +128,20 @@ export default function Home() {
                   </div>
                 </button>
               </>
-            ) : selectedGame === 'darkmessiah' ? (
+            ) : selectedGame === 'metalgear' ? (
+              <button
+                onClick={() => navigate('/metalgear')}
+                className="w-full flex items-center p-5 rounded-lg bg-gray-800/80 hover:bg-gray-700/80 border border-gray-600 hover:border-emerald-500 backdrop-blur-sm transition-all text-left group shadow-lg"
+              >
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Languages className="text-emerald-400 group-hover:text-emerald-300" size={20} />
+                    <span className="font-bold text-lg text-white">Türkçe Yama Stüdyosu</span>
+                  </div>
+                  <span className="text-xs text-gray-400 leading-relaxed">Telsiz konuşmalarını, eşya açıklamalarını ve menüleri çevirin. Yamayı oyuna tek tıkla kurun / kaldırın; orijinal dosyalar yedeklenir.</span>
+                </div>
+              </button>
+            ) : (
               <button
                 onClick={() => navigate('/darkmessiah')}
                 className="w-full flex items-center p-5 rounded-lg bg-gray-800/80 hover:bg-gray-700/80 border border-gray-600 hover:border-red-500 backdrop-blur-sm transition-all text-left group shadow-lg"
@@ -139,19 +152,6 @@ export default function Home() {
                     <span className="font-bold text-lg text-white">Türkçe Yama Stüdyosu</span>
                   </div>
                   <span className="text-xs text-gray-400 leading-relaxed">Altyazı, görev, menü ve eşya metinlerini çevirin. Yamayı oyuna tek tıkla kurun / kaldırın; Türkçe, İngilizceden ayrı bir dil olarak seçilir.</span>
-                </div>
-              </button>
-            ) : (
-              <button
-                onClick={() => navigate('/witcher')}
-                className="w-full flex items-center p-5 rounded-lg bg-gray-800/80 hover:bg-gray-700/80 border border-gray-600 hover:border-amber-500 backdrop-blur-sm transition-all text-left group shadow-lg"
-              >
-                <div className="flex flex-col">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Languages className="text-amber-400 group-hover:text-amber-300" size={20} />
-                    <span className="font-bold text-lg text-white">TLG Çeviri Sistemi</span>
-                  </div>
-                  <span className="text-xs text-gray-400 leading-relaxed">The Witcher 1 TLG dosyalarını XML formatına çevirin, düzenleyin ve geri dönüştürün. Yedekleme sistemi aktiftir.</span>
                 </div>
               </button>
             )}

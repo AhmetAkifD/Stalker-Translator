@@ -107,7 +107,8 @@ export async function loadManifest(resourceDir) {
 }
 
 export async function computeStats(resourceDir, file) {
-  const english = (await readEntries(resourceDir, file.englishSegs)) || [];
+  // Rows with an empty English text have nothing to translate and are not counted.
+  const english = ((await readEntries(resourceDir, file.englishSegs)) || []).filter((e) => e.value.trim() !== '');
   const turkish = (await readEntries(resourceDir, file.turkishSegs)) || [];
   const ids = new Set(english.map((e) => e.id));
   const translated = turkish.filter((e) => ids.has(e.id) && e.value.trim() !== '').length;

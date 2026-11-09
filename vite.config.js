@@ -2,8 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import darkMessiahApi from './server/darkMessiahApi.js'
+import metalGearApi from './server/metalGearApi.js'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss(), darkMessiahApi()],
+  plugins: [react(), tailwindcss(), darkMessiahApi(), metalGearApi()],
 })

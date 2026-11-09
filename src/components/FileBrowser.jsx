@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FolderOpen, FileText, ChevronRight, ChevronDown, CheckCircle, DatabaseBackup, AlertTriangle, Edit3, Eye, Wrench, Loader2, BookOpen, Archive } from 'lucide-react';
+import { FolderOpen, FileText, ChevronRight, ChevronDown, CheckCircle, DatabaseBackup, AlertTriangle, Edit3, Eye, Wrench, Loader2, Archive } from 'lucide-react';
 
 export default function FileBrowser({ 
   originalFiles, 
@@ -13,9 +13,7 @@ export default function FileBrowser({
   viewMode = 'editor',
   onViewModeChange = () => {},
   onFixBrokenFiles = () => {},
-  isFixing = false,
-  hasDirectory = false,
-  glossaryCount = 0
+  isFixing = false
 }) {
   const [originalsOpen, setOriginalsOpen] = useState(true);
   const [translatedOpen, setTranslatedOpen] = useState(true);
@@ -35,7 +33,7 @@ export default function FileBrowser({
           Select Folder
         </button>
 
-        {/* Mode Switch (Düzenleyici / Görüntüleyici / Sözlük) */}
+        {/* Mode Switch (Düzenleyici / Görüntüleyici) */}
         <div className="mt-2.5 bg-gray-200/90 p-1 rounded-lg flex items-center gap-1 text-xs">
           <button
             type="button"
@@ -62,30 +60,6 @@ export default function FileBrowser({
           >
             <Eye size={13} />
             <span className="truncate">Görüntüle</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (!hasDirectory) {
-                alert("Lütfen önce bir klasör seçin!");
-                return;
-              }
-              onViewModeChange('glossary');
-            }}
-            className={`flex-1 py-1.5 px-1.5 rounded-md font-medium flex items-center justify-center gap-1 transition-all ${
-              viewMode === 'glossary'
-                ? 'bg-white text-blue-700 shadow-sm font-semibold'
-                : 'text-gray-600 hover:text-gray-900'
-            } ${!hasDirectory ? 'opacity-50 cursor-not-allowed' : ''}`}
-            title="Özel Çeviri Terimleri ve Sözlük Kuralları"
-          >
-            <BookOpen size={13} />
-            <span className="truncate">Sözlük</span>
-            {glossaryCount > 0 && (
-              <span className={`text-[10px] px-1 rounded-full font-bold ${viewMode === 'glossary' ? 'bg-blue-100 text-blue-800' : 'bg-gray-300 text-gray-700'}`}>
-                {glossaryCount}
-              </span>
-            )}
           </button>
         </div>
 
