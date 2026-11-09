@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { translateText, translateKeyed, countKeyedTokens } from '../../utils/geminiApi';
+import { translateText, translateKeyed, countKeyedTokens, matchGlossaryTerms } from '../../utils/geminiApi';
 import { readEntries, writeEntries } from '../../utils/darkmessiah/workspace';
 import { checkFormatting, DM_FORMAT_RULES } from '../../utils/darkmessiah/valveLocalization';
 import { createFallbackRunner } from '../../utils/aiFallback';
@@ -145,6 +145,13 @@ export default function DarkMessiahEditor({
 
   // Rows "Toplu Çevir" would send right now (untranslated, non-empty, in the current filter/search).
   const todoRows = useMemo(() => visible.filter((i) => !i.translation.trim() && !isEmptyRow(i)), [visible]);
+
+  // Glossary terms that appear in the rows "Toplu Çevir" would send (when nothing is left to translate:
+  // in the whole file). Same matching as the API requests, so this is what the model receives.
+  const matchedTerms = useMemo(() => {
+    const rows = todoRows.length ? todoRows : items.filter((i) => !isEmptyRow(i));
+    return matchGlossaryTerms(glossary, rows.map((r) => r.original));
+  }, [glossary, todoRows, items]);
 
   // An old estimate no longer matches once the rows, prompt, model or glossary change.
   useEffect(() => { setTokenEstimate(null); }, [todoRows, fullPrompt, selectedModel, glossary]);
@@ -350,14 +357,35 @@ export default function DarkMessiahEditor({
               <h2 className="text-lg font-bold text-gray-800 truncate" title={file.subtitle || file.turkishSegs.join('/')}>{file.label}</h2>
               <span className="text-xs font-mono text-gray-500 truncate">{file.subtitle || `${file.englishSegs.join('/')} → ${file.turkishSegs.join('/')}`}</span>
             </div>
-            <button
-              onClick={onOpenGlossary}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-md text-sm font-medium transition-colors border border-indigo-200 shrink-0"
-            >
-              <BookOpen size={16} />
-              Sözlük
-              {glossary.length > 0 && <span className="bg-indigo-200 text-indigo-800 text-[10px] px-1.5 py-0.5 rounded-full">{glossary.length}</span>}
-            </button>
+            <div className="relative group shrink-0">
+              <button
+                onClick={onOpenGlossary}
+                title="Sözlüğü aç"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-md text-sm font-medium transition-colors border border-indigo-200"
+              >
+                <BookOpen size={16} />
+                {glossary.length > 0 ? <>{glossary.length} Terim <span className="text-indigo-500">(Eşleşen: {matchedTerms.length})</span></> : 'Sözlük'}
+              </button>
+              {matchedTerms.length > 0 && (
+                <div className="absolute top-full mt-1 left-0 w-72 bg-white border border-gray-200 shadow-xl rounded-md z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 overflow-hidden">
+                  <div className="px-3 py-2 bg-indigo-50 border-b border-indigo-100 text-xs font-bold text-indigo-800">
+                    Yapay zekaya gönderilecek terimler ({matchedTerms.length})
+                    <div className="font-normal text-indigo-600 mt-0.5">
+                      {todoRows.length ? `Toplu Çevir'in göndereceği ${todoRows.length} satırda geçenler` : 'Bu dosyada geçenler'}
+                    </div>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto p-1.5 space-y-1">
+                    {matchedTerms.map((term) => (
+                      <div key={term.id ?? term.original} className="text-[11px] leading-tight flex flex-col px-2 py-1.5 hover:bg-gray-50 rounded border border-transparent hover:border-gray-100">
+                        <span className="font-bold text-gray-800">{term.original}</span>
+                        <span className="text-gray-500 font-medium">➜ {term.translation}</span>
+                        {term.pronunciation?.trim() && <span className="text-gray-400 italic">Okunuş: {term.pronunciation}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-3">

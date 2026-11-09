@@ -1,21 +1,22 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-export function buildGlossaryPrompt(glossary = [], targetTexts = null) {
-  if (!Array.isArray(glossary) || glossary.length === 0) return "";
-  let validTerms = glossary.filter(
+// Glossary terms that are sent with a request: terms with a translation that appear in the texts
+// (case-insensitive). With `targetTexts` = null every term with a translation is returned.
+// Editors use this too, so the list they show is exactly what the API receives.
+export function matchGlossaryTerms(glossary = [], targetTexts = null) {
+  if (!Array.isArray(glossary) || glossary.length === 0) return [];
+  const validTerms = glossary.filter(
     item => item && typeof item.original === 'string' && typeof item.translation === 'string' &&
             item.original.trim() !== '' && item.translation.trim() !== ''
   );
+  if (!targetTexts || validTerms.length === 0) return validTerms;
+  const combinedText = (Array.isArray(targetTexts) ? targetTexts.join("\n") : targetTexts).toLowerCase();
+  return validTerms.filter(item => combinedText.includes(item.original.trim().toLowerCase()));
+}
 
+export function buildGlossaryPrompt(glossary = [], targetTexts = null) {
   // DYNAMIC FILTERING: Only include terms that actually appear in the target text
-  if (targetTexts && validTerms.length > 0) {
-    const combinedText = (Array.isArray(targetTexts) ? targetTexts.join("\n") : targetTexts).toLowerCase();
-    validTerms = validTerms.filter(item => {
-      const originalLower = item.original.trim().toLowerCase();
-      return combinedText.includes(originalLower);
-    });
-  }
-
+  const validTerms = matchGlossaryTerms(glossary, targetTexts);
   if (validTerms.length === 0) return "";
 
   let promptAddition = "\n\nCRITICAL GLOSSARY & TURKISH SUFFIX / PRONUNCIATION RULES:\n";
