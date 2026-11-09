@@ -37,9 +37,12 @@ function splitIntoChunks(list) {
   return chunks;
 }
 
+// `source` (optional) lets another game reuse this editor: { load(): items, save(items), formatRules, check(original, translation) }.
+// items = [{ id, key, original, translation }]. Without it the Dark Messiah files in `resourceDir` are used.
 export default function DarkMessiahEditor({
   file,
   resourceDir,
+  source = null,
   apiKey,
   apiKeys = [],
   prompt,
@@ -51,7 +54,7 @@ export default function DarkMessiahEditor({
   onDirtyChange = () => {},
 }) {
   const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // true from the start: no "no rows" flash before the first load
   const [dirty, setDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState('');
   const [filter, setFilter] = useState('all');
@@ -67,7 +70,8 @@ export default function DarkMessiahEditor({
   const [lastUsage, setLastUsage] = useState(null); // { input, output, total, requests }
   const usageRef = useRef(null);
 
-  const fullPrompt = prompt + DM_FORMAT_RULES;
+  const fullPrompt = prompt + (source ? source.formatRules : DM_FORMAT_RULES);
+  const checkRow = source ? source.check : checkFormatting;
   const keys = apiKeys.length ? apiKeys : [apiKey];
   const newRunner = (onSwitch) => createFallbackRunner({ apiKeys: keys, models: fallbackModels, selectedModel, onSwitch });
 
@@ -76,11 +80,17 @@ export default function DarkMessiahEditor({
     (async () => {
       setLoading(true);
       try {
-        const english = (await readEntries(resourceDir, file.englishSegs)) || [];
-        const turkish = (await readEntries(resourceDir, file.turkishSegs)) || [];
-        const tr = new Map(turkish.map((e) => [e.id, e.value]));
+        let loaded;
+        if (source) {
+          loaded = await source.load();
+        } else {
+          const english = (await readEntries(resourceDir, file.englishSegs)) || [];
+          const turkish = (await readEntries(resourceDir, file.turkishSegs)) || [];
+          const tr = new Map(turkish.map((e) => [e.id, e.value]));
+          loaded = english.map((e) => ({ id: e.id, key: e.key, original: e.value, translation: tr.get(e.id) || '' }));
+        }
         if (cancelled) return;
-        setItems(english.map((e) => ({ id: e.id, key: e.key, original: e.value, translation: tr.get(e.id) || '' })));
+        setItems(loaded);
         setDirty(false);
         setSaveStatus('');
         setPage(0);
@@ -91,7 +101,7 @@ export default function DarkMessiahEditor({
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [file, resourceDir]);
+  }, [file, resourceDir, source]);
 
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
 
@@ -111,11 +121,11 @@ export default function DarkMessiahEditor({
   const warnings = useMemo(() => {
     const m = new Map();
     for (const it of items) {
-      const p = checkFormatting(it.original, it.translation);
+      const p = checkRow(it.original, it.translation);
       if (p.length) m.set(it.id, p);
     }
     return m;
-  }, [items]);
+  }, [items, checkRow]);
 
   // Rows whose English text is empty have nothing to translate: they are never sent to the AI
   // and are left out of the progress counts (the game shows them empty either way).
@@ -167,16 +177,8 @@ export default function DarkMessiahEditor({
   const handleSave = async () => {
     setSaveStatus('Kaydediliyor...');
     try {
-      // Repeated keys are matched by occurrence order, so once one copy is translated every copy is written
-      // (untranslated copies keep the English text) to keep the order intact when the file is reopened.
-      const lower = (i) => i.key.toLowerCase();
-      const counts = new Map();
-      for (const i of items) counts.set(lower(i), (counts.get(lower(i)) || 0) + 1);
-      const translatedKeys = new Set(items.filter((i) => i.translation.trim()).map(lower));
-      const entries = items
-        .filter((i) => i.translation.trim() || (counts.get(lower(i)) > 1 && translatedKeys.has(lower(i))))
-        .map((i) => ({ key: i.key, value: i.translation.trim() ? i.translation : i.original }));
-      await writeEntries(resourceDir, file.turkishSegs, entries);
+      if (source) await source.save(items);
+      else await saveDarkMessiah();
       setDirty(false);
       setSaveStatus('Kaydedildi');
       const nonEmpty = items.filter((i) => !isEmptyRow(i));
@@ -186,6 +188,19 @@ export default function DarkMessiahEditor({
       console.error(err);
       setSaveStatus('Kayıt hatası: ' + err.message);
     }
+  };
+
+  const saveDarkMessiah = async () => {
+    // Repeated keys are matched by occurrence order, so once one copy is translated every copy is written
+    // (untranslated copies keep the English text) to keep the order intact when the file is reopened.
+    const lower = (i) => i.key.toLowerCase();
+    const counts = new Map();
+    for (const i of items) counts.set(lower(i), (counts.get(lower(i)) || 0) + 1);
+    const translatedKeys = new Set(items.filter((i) => i.translation.trim()).map(lower));
+    const entries = items
+      .filter((i) => i.translation.trim() || (counts.get(lower(i)) > 1 && translatedKeys.has(lower(i))))
+      .map((i) => ({ key: i.key, value: i.translation.trim() ? i.translation : i.original }));
+    await writeEntries(resourceDir, file.turkishSegs, entries);
   };
 
   const handleTranslateSingle = async (item) => {
@@ -332,8 +347,8 @@ export default function DarkMessiahEditor({
         <div className="flex items-center justify-between gap-3 p-3 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex flex-col min-w-0">
-              <h2 className="text-lg font-bold text-gray-800 truncate" title={file.turkishSegs.join('/')}>{file.label}</h2>
-              <span className="text-xs font-mono text-gray-500 truncate">{file.englishSegs.join('/')} → {file.turkishSegs.join('/')}</span>
+              <h2 className="text-lg font-bold text-gray-800 truncate" title={file.subtitle || file.turkishSegs.join('/')}>{file.label}</h2>
+              <span className="text-xs font-mono text-gray-500 truncate">{file.subtitle || `${file.englishSegs.join('/')} → ${file.turkishSegs.join('/')}`}</span>
             </div>
             <button
               onClick={onOpenGlossary}

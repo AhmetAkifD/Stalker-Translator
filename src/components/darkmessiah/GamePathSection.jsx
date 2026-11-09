@@ -1,15 +1,19 @@
 import { Gamepad2, Search, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { SettingsSection } from '../shared/SettingsPage';
 
-// Dark Messiah-specific setting: where mm.exe is installed. `game` comes from useGamePath().
-export default function GamePathSection({ game }) {
+// Where the game is installed. `game` comes from useGamePath(); texts default to Dark Messiah's.
+export default function GamePathSection({
+  game,
+  description = 'mm.exe dosyasının bulunduğu klasör. Yama bu klasöre kurulur; bilgi tarayıcıda saklanır.',
+  placeholder = 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Dark Messiah Might and Magic Single Player',
+}) {
   const v = game.validation;
   return (
     <SettingsSection
       icon={Gamepad2}
       accent="red"
       title="Oyun Konumu"
-      description="mm.exe dosyasının bulunduğu klasör. Yama bu klasöre kurulur; bilgi tarayıcıda saklanır."
+      description={description}
     >
       <div className="flex gap-2">
         <input
@@ -17,7 +21,7 @@ export default function GamePathSection({ game }) {
           onChange={(e) => game.setGamePath(e.target.value)}
           onBlur={(e) => game.savePath(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && game.savePath(e.currentTarget.value)}
-          placeholder="C:\Program Files (x86)\Steam\steamapps\common\Dark Messiah Might and Magic Single Player"
+          placeholder={placeholder}
           className="flex-1 min-w-0 border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-red-500 outline-none"
         />
         <button

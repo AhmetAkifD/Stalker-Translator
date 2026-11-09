@@ -3,6 +3,7 @@ import Home from './pages/Home';
 import Translator from './pages/Translator';
 import DeasciifierReview from './pages/DeasciifierReview';
 import DarkMessiahTranslator from './pages/darkmessiah/DarkMessiahTranslator';
+import MetalGearTranslator from './pages/mg/MetalGearTranslator';
 
 function App() {
   return (
@@ -13,6 +14,7 @@ function App() {
         <Route path="/glossary" element={<Translator initialMode="glossary" />} />
         <Route path="/deasciifier" element={<DeasciifierReview />} />
         <Route path="/darkmessiah" element={<DarkMessiahTranslator />} />
+        <Route path="/metalgear" element={<MetalGearTranslator />} />
       </Routes>
     </Router>
   );

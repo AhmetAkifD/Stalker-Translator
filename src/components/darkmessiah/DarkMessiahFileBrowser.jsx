@@ -2,8 +2,13 @@ import { useState } from 'react';
 import { FolderOpen, FileText, ChevronDown, ChevronRight, Download, CheckCircle2 } from 'lucide-react';
 import { GROUPS } from '../../utils/darkmessiah/workspace';
 
+const DM_EMPTY_HINT = <>Çıkarılmış VPK klasörünü seçin (ör. <span className="font-mono">Desktop\vpk unpacked</span>).</>;
+
+// `groups` / `emptyHint` default to Dark Messiah's; other games pass their own.
 export default function DarkMessiahFileBrowser({
   files = [],
+  groups = GROUPS,
+  emptyHint = DM_EMPTY_HINT,
   stats = {},
   selectedId,
   onSelectFile,
@@ -36,11 +41,9 @@ export default function DarkMessiahFileBrowser({
 
       <div className="flex-1 overflow-y-auto p-2 space-y-3">
         {!workspaceLabel ? (
-          <p className="text-center text-sm text-gray-500 mt-4 px-3">
-            Çıkarılmış VPK klasörünü seçin (ör. <span className="font-mono">Desktop\vpk unpacked</span>).
-          </p>
+          <p className="text-center text-sm text-gray-500 mt-4 px-3">{emptyHint}</p>
         ) : (
-          Object.entries(GROUPS).map(([groupId, group]) => {
+          Object.entries(groups).map(([groupId, group]) => {
             const groupFiles = files.filter((f) => f.group === groupId);
             if (groupFiles.length === 0) return null;
             const total = groupFiles.reduce((s, f) => s + (stats[f.id]?.total || 0), 0);
@@ -70,7 +73,7 @@ export default function DarkMessiahFileBrowser({
                           <button
                             onClick={() => onSelectFile(f)}
                             className={`w-full px-2.5 py-1.5 rounded text-left transition-colors ${active ? 'bg-red-100 text-red-900' : 'hover:bg-gray-200/70 text-gray-700'}`}
-                            title={f.turkishSegs.join('/')}
+                            title={f.subtitle || f.turkishSegs.join('/')}
                           >
                             <div className="flex items-center justify-between gap-2">
                               <span className="flex items-center gap-1.5 text-xs font-medium truncate">
